@@ -219,6 +219,8 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
                             TextField(
                               controller: _note,
                               textCapitalization: TextCapitalization.sentences,
+                              textInputAction: TextInputAction.done,
+                              onSubmitted: (_) => FocusScope.of(context).unfocus(),
                               style: AppText.body(14),
                               decoration: InputDecoration(hintText: notePlaceholder, isDense: true),
                             ),
@@ -234,8 +236,10 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
               padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
               child: Column(
                 children: [
-                  _Keypad(onPress: _press),
-                  const SizedBox(height: 14),
+                  if (MediaQuery.of(context).viewInsets.bottom == 0) ...[
+                    _Keypad(onPress: _press),
+                    const SizedBox(height: 12),
+                  ],
                   BoldButton(label: 'Simpan ${_kind.label.toLowerCase()}', onPressed: _save),
                 ],
               ),
@@ -311,7 +315,7 @@ class _Key extends StatelessWidget {
         child: InkWell(
           onTap: () => onPress(value),
           child: SizedBox(
-            height: 50,
+            height: 45,
             child: Center(
               child: isBack
                   ? const Icon(Icons.backspace_outlined, size: 22, color: AppColors.ink)

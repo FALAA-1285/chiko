@@ -13,59 +13,62 @@ class SambutanPage extends StatelessWidget {
     return Scaffold(
       body: SafeArea(
         child: LayoutBuilder(
-          builder: (context, constraints) => SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight - 32),
-              child: IntrinsicHeight(
-                child: Column(
-                  children: [
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: () => context.go('/beranda'),
-                        style: TextButton.styleFrom(foregroundColor: AppColors.ink, minimumSize: const Size(44, 44)),
-                        child: Text('Lewati', style: AppText.body(15, weight: FontWeight.w800)),
+          builder: (context, constraints) {
+            final heroSize = (constraints.maxHeight * 0.32).clamp(160.0, 230.0);
+            return SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight - 32),
+                child: IntrinsicHeight(
+                  child: Column(
+                    children: [
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () => context.go('/beranda'),
+                          style: TextButton.styleFrom(foregroundColor: AppColors.ink, minimumSize: const Size(44, 44)),
+                          child: Text('Lewati', style: AppText.body(15, weight: FontWeight.w800)),
+                        ),
                       ),
-                    ),
-                    const _Hero(),
-                    const SizedBox(height: 12),
-                    Text('Halo, aku Chiko!', textAlign: TextAlign.center, style: AppText.display(32)),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Aku bantu kamu ingat tugas kuliah, jadwal, dan uang jajan. Semua tersimpan di HP-mu sendiri.',
-                      textAlign: TextAlign.center,
-                      style: AppText.body(16, color: AppColors.inkSoft, height: 1.55),
-                    ),
-                    const SizedBox(height: 18),
-                    const Wrap(
-                      alignment: WrapAlignment.center,
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        _FeaturePill(icon: Icons.task_alt_rounded, label: 'Tugas', color: AppColors.kerjaSoft),
-                        _FeaturePill(icon: Icons.calendar_month_rounded, label: 'Kalender', color: AppColors.kuliahSoft),
-                        _FeaturePill(icon: Icons.account_balance_wallet_rounded, label: 'Keuangan', color: AppColors.incomeSoft),
-                      ],
-                    ),
-                    const Spacer(),
-                    const SizedBox(height: 20),
-                    const _PageDots(),
-                    const SizedBox(height: 18),
-                    BoldButton(label: 'Mulai', onPressed: () => context.go('/beranda')),
-                    const SizedBox(height: 8),
-                    TextButton(
-                      onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Fitur pulihkan data menyusul di versi berikutnya.')),
+                      _Hero(size: heroSize),
+                      const SizedBox(height: 10),
+                      Text('Halo, aku Chiko!', textAlign: TextAlign.center, style: AppText.display(28)),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Aku bantu kamu ingat tugas kuliah, jadwal, dan uang jajan. Semua tersimpan di HP-mu sendiri.',
+                        textAlign: TextAlign.center,
+                        style: AppText.body(15, color: AppColors.inkSoft, height: 1.45),
                       ),
-                      style: TextButton.styleFrom(foregroundColor: AppColors.inkSoft),
-                      child: Text('Sudah punya backup? Pulihkan data', style: AppText.body(14, weight: FontWeight.w700, color: AppColors.inkSoft)),
-                    ),
-                  ],
+                      const SizedBox(height: 14),
+                      const Wrap(
+                        alignment: WrapAlignment.center,
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _FeaturePill(icon: Icons.task_alt_rounded, label: 'Tugas', color: AppColors.kerjaSoft),
+                          _FeaturePill(icon: Icons.calendar_month_rounded, label: 'Kalender', color: AppColors.kuliahSoft),
+                          _FeaturePill(icon: Icons.account_balance_wallet_rounded, label: 'Keuangan', color: AppColors.incomeSoft),
+                        ],
+                      ),
+                      const Spacer(),
+                      const SizedBox(height: 16),
+                      const _PageDots(),
+                      const SizedBox(height: 16),
+                      BoldButton(label: 'Mulai', onPressed: () => context.go('/beranda')),
+                      const SizedBox(height: 6),
+                      TextButton(
+                        onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Fitur pulihkan data menyusul di versi berikutnya.')),
+                        ),
+                        style: TextButton.styleFrom(foregroundColor: AppColors.inkSoft),
+                        child: Text('Sudah punya backup? Pulihkan data', style: AppText.body(14, weight: FontWeight.w700, color: AppColors.inkSoft)),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ),
+            );
+          },
         ),
       ),
     );
@@ -73,27 +76,30 @@ class SambutanPage extends StatelessWidget {
 }
 
 class _Hero extends StatelessWidget {
-  const _Hero();
+  const _Hero({this.size = 220});
+
+  final double size;
 
   @override
   Widget build(BuildContext context) {
+    final circleSize = size * 0.9;
     return SizedBox(
-      height: 320,
+      height: size + 20,
       child: Stack(
         alignment: Alignment.center,
         children: [
           Container(
-            width: 270,
-            height: 270,
+            width: circleSize,
+            height: circleSize,
             decoration: BoxDecoration(
               color: AppColors.yellow,
               shape: BoxShape.circle,
               border: Border.all(color: AppColors.ink, width: 2),
             ),
           ),
-          const Positioned(top: 26, right: 40, child: _Bubble(size: 52, color: AppColors.pink)),
-          const Positioned(bottom: 40, left: 24, child: _Bubble(size: 32, color: AppColors.kuliahSoft)),
-          const Chiko(mood: ChikoMood.santai, size: 290),
+          Positioned(top: size * 0.08, right: size * 0.12, child: _Bubble(size: size * 0.18, color: AppColors.pink)),
+          Positioned(bottom: size * 0.12, left: size * 0.08, child: _Bubble(size: size * 0.12, color: AppColors.kuliahSoft)),
+          Chiko(mood: ChikoMood.santai, size: size),
         ],
       ),
     );

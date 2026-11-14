@@ -102,6 +102,75 @@ class _Header extends StatelessWidget {
 
   final DateTime now;
 
+  void _showNotifications(BuildContext context) {
+    final tasks = TaskStore.instance;
+    final mepet = tasks.active.where((t) => t.isUrgent(now)).toList();
+    final selesai = tasks.completedOn(now);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        side: BorderSide(color: AppColors.ink, width: 2),
+      ),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(child: Text('Notifikasi & Pengingat', style: AppText.display(22, weight: FontWeight.w600))),
+                RoundIconButton(
+                  icon: Icons.close_rounded,
+                  tooltip: 'Tutup',
+                  size: 38,
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            if (mepet.isEmpty && selesai.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                child: Center(
+                  child: Text('Belum ada notifikasi baru hari ini.', style: AppText.body(15, color: AppColors.inkSoft)),
+                ),
+              )
+            else ...[
+              for (final t in mepet) ...[
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const CircleAvatar(
+                    backgroundColor: AppColors.expenseSoft,
+                    child: Icon(Icons.warning_amber_rounded, color: AppColors.expenseInk),
+                  ),
+                  title: Text(t.title, style: AppText.body(15, weight: FontWeight.w800)),
+                  subtitle: Text('Deadline: ${labelDeadline(t.dueAt, now)}', style: AppText.body(13, color: AppColors.muted)),
+                ),
+                const Divider(height: 1, color: AppColors.line),
+              ],
+              for (final t in selesai) ...[
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const CircleAvatar(
+                    backgroundColor: AppColors.incomeSoft,
+                    child: Icon(Icons.check_circle_rounded, color: AppColors.incomeInk),
+                  ),
+                  title: Text(t.title, style: AppText.body(15, weight: FontWeight.w800)),
+                  subtitle: Text('Selesai hari ini', style: AppText.body(13, color: AppColors.incomeInk)),
+                ),
+                const Divider(height: 1, color: AppColors.line),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Row(
@@ -120,7 +189,7 @@ class _Header extends StatelessWidget {
           icon: Icons.notifications_none_rounded,
           tooltip: 'Notifikasi',
           badge: true,
-          onPressed: () {},
+          onPressed: () => _showNotifications(context),
         ),
       ],
     );
@@ -141,7 +210,7 @@ class _ChikoCard extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(6, 12, 16, 14),
       child: Row(
         children: [
-          Chiko(mood: status.mood, size: 128),
+          Chiko(mood: status.mood, size: 114),
           const SizedBox(width: 4),
           Expanded(
             child: Column(
@@ -175,7 +244,7 @@ class _ChikoCard extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(status.action!),
+                        Flexible(child: Text(status.action!, overflow: TextOverflow.ellipsis)),
                         const SizedBox(width: 6),
                         const Icon(Icons.arrow_forward_rounded, size: 18),
                       ],
@@ -204,13 +273,22 @@ class _StatTile extends StatelessWidget {
     return BoldCard(
       color: color,
       radius: 18,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(value, style: AppText.display(26)),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(value, style: AppText.display(24)),
+          ),
           const SizedBox(height: 2),
-          Text(label, style: AppText.body(13, weight: FontWeight.w700, color: ink)),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppText.body(12, weight: FontWeight.w700, color: ink),
+          ),
         ],
       ),
     );

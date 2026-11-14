@@ -256,7 +256,9 @@ class _CategoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ringkasan = items.map((e) => '${e.$1.name} ${(e.$2 / total * 100).round()}%').join(', ');
+    final ringkasan = total > 0
+        ? items.map((e) => '${e.$1.name} ${(e.$2 / total * 100).round()}%').join(', ')
+        : 'Belum ada pengeluaran';
     return BoldCard(
       radius: 22,
       padding: const EdgeInsets.all(16),
@@ -270,7 +272,7 @@ class _CategoryCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          if (items.isEmpty)
+          if (items.isEmpty || total <= 0)
             Text('Belum ada pengeluaran bulan ini.', style: AppText.body(14, color: AppColors.inkSoft))
           else ...[
             Semantics(
@@ -283,7 +285,7 @@ class _CategoryCard extends StatelessWidget {
                     for (var i = 0; i < items.length; i++) ...[
                       if (i > 0) const SizedBox(width: 3),
                       Expanded(
-                        flex: items[i].$2,
+                        flex: items[i].$2 <= 0 ? 1 : items[i].$2,
                         child: Container(
                           decoration: BoxDecoration(
                             color: items[i].$1.color,

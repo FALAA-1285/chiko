@@ -28,20 +28,23 @@ class AppShell extends StatelessWidget {
         ),
         child: SafeArea(
           top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(6, 8, 6, 8),
-            child: Row(
-              children: [
-                for (var i = 0; i < _items.length; i++)
-                  Expanded(
-                    child: _NavItem(
-                      icon: _items[i].$1,
-                      label: _items[i].$2,
-                      selected: navigationShell.currentIndex == i,
-                      onTap: () => navigationShell.goBranch(i, initialLocation: i == navigationShell.currentIndex),
+          child: SizedBox(
+            height: 66,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              child: Row(
+                children: [
+                  for (var i = 0; i < _items.length; i++)
+                    Expanded(
+                      child: _NavItem(
+                        icon: _items[i].$1,
+                        label: _items[i].$2,
+                        selected: navigationShell.currentIndex == i,
+                        onTap: () => navigationShell.goBranch(i, initialLocation: i == navigationShell.currentIndex),
+                      ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -68,9 +71,10 @@ class _NavItem extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 56),
+        child: SizedBox(
+          height: 58,
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               AnimatedContainer(

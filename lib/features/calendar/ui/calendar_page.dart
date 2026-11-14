@@ -43,15 +43,26 @@ class _CalendarPageState extends State<CalendarPage> {
     return List.generate(42, (i) => DateTime(start.year, start.month, start.day + i));
   }
 
+  void _openAddEventSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        side: BorderSide(color: AppColors.ink, width: 2),
+      ),
+      builder: (context) => _AddEventSheet(initialDate: _selected),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final events = EventStore.instance;
     return Scaffold(
       floatingActionButton: AddFab(
         tooltip: 'Tambah jadwal',
-        onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Form tambah jadwal menyusul.')),
-        ),
+        onPressed: () => _openAddEventSheet(context),
       ),
       body: SafeArea(
         child: ListenableBuilder(
@@ -284,6 +295,216 @@ class _Legend extends StatelessWidget {
         const SizedBox(width: 5),
         Text(label, style: AppText.body(12, weight: FontWeight.w800, color: AppColors.inkSoft)),
       ],
+    );
+  }
+}
+
+class _AddEventSheet extends StatefulWidget {
+  const _AddEventSheet({required this.initialDate});
+
+  final DateTime initialDate;
+
+  @override
+  State<_AddEventSheet> createState() => _AddEventSheetState();
+}
+
+class _AddEventSheetState extends State<_AddEventSheet> {
+  final _titleController = TextEditingController();
+  final _placeController = TextEditingController();
+  EventType _type = EventType.kuliah;
+  late DateTime _date = widget.initialDate;
+  TimeOfDay _startTime = const TimeOfDay(hour: 9, minute: 0);
+  TimeOfDay _endTime = const TimeOfDay(hour: 11, minute: 0);
+  bool _repeatWeekly = false;
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _placeController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final now = sekarang();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _date,
+      firstDate: DateTime(now.year - 1),
+      lastDate: DateTime(now.year + 2),
+      helpText: 'Tanggal acara',
+    );
+    if (picked != null) setState(() => _date = picked);
+  }
+
+  Future<void> _pickStartTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _startTime,
+      helpText: 'Jam mulai',
+    );
+    if (picked != null) setState(() => _startTime = picked);
+  }
+
+  Future<void> _pickEndTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _endTime,
+      helpText: 'Jam selesai',
+    );
+    if (picked != null) setState(() => _endTime = picked);
+  }
+
+  void _save() {
+    final title = _titleController.text.trim();
+    if (title.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Judul jadwal tidak boleh kosong.')));
+      return;
+    }
+    final start = DateTime(_date.year, _date.month, _date.day, _startTime.hour, _startTime.minute);
+    final end = DateTime(_date.year, _date.month, _date.day, _endTime.hour, _endTime.minute);
+    final place = _placeController.text.trim();
+
+    EventStore.instance.add(
+      ScheduleEntry(
+        title: title,
+        type: _type,
+        start: start,
+        end: end,
+        place: place.isEmpty ? '' : place,
+        repeatWeekly: _repeatWeekly,
+        repeatUntil: _repeatWeekly ? DateTime(_date.year, 12, 31) : null,
+      ),
+    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Jadwal "$title" berhasil ditambahkan.')));
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final availableTypes = [EventType.kuliah, EventType.kerja, EventType.pribadi];
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 16, 20, 20 + bottomInset),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(child: Text('Tambah Jadwal Baru', style: AppText.display(22, weight: FontWeight.w600))),
+                RoundIconButton(
+                  icon: Icons.close_rounded,
+                  tooltip: 'Tutup',
+                  size: 38,
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text('Judul Acara / Kuliah', style: AppText.body(13, weight: FontWeight.w800, color: AppColors.muted)),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _titleController,
+              autofocus: true,
+              textCapitalization: TextCapitalization.sentences,
+              style: AppText.body(15),
+              decoration: const InputDecoration(hintText: 'Misal: Kuliah Basis Data, Rapat Divisi'),
+            ),
+            const SizedBox(height: 14),
+            Text('Jenis Acara', style: AppText.body(13, weight: FontWeight.w800, color: AppColors.muted)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final t in availableTypes)
+                  ChoicePill(
+                    label: t.label,
+                    selected: _type == t,
+                    selectedColor: t.ink,
+                    selectedText: AppColors.white,
+                    onTap: () => setState(() => _type = t),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Text('Tanggal & Waktu', style: AppText.body(13, weight: FontWeight.w800, color: AppColors.muted)),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _pickDate,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.ink,
+                      backgroundColor: AppColors.white,
+                      side: const BorderSide(color: AppColors.ink, width: 2),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      minimumSize: const Size(0, 48),
+                    ),
+                    icon: const Icon(Icons.calendar_month_rounded, size: 18),
+                    label: Text(tanggalPendek(_date), style: AppText.body(13, weight: FontWeight.w800)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton(
+                  onPressed: _pickStartTime,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.ink,
+                    backgroundColor: AppColors.white,
+                    side: const BorderSide(color: AppColors.ink, width: 2),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    minimumSize: const Size(0, 48),
+                  ),
+                  child: Text(
+                    '${_startTime.hour.toString().padLeft(2, '0')}:${_startTime.minute.toString().padLeft(2, '0')}',
+                    style: AppText.body(13, weight: FontWeight.w800),
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 4),
+                  child: Text('–', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+                OutlinedButton(
+                  onPressed: _pickEndTime,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.ink,
+                    backgroundColor: AppColors.white,
+                    side: const BorderSide(color: AppColors.ink, width: 2),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    minimumSize: const Size(0, 48),
+                  ),
+                  child: Text(
+                    '${_endTime.hour.toString().padLeft(2, '0')}:${_endTime.minute.toString().padLeft(2, '0')}',
+                    style: AppText.body(13, weight: FontWeight.w800),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Text('Lokasi / Ruangan (opsional)', style: AppText.body(13, weight: FontWeight.w800, color: AppColors.muted)),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _placeController,
+              textCapitalization: TextCapitalization.sentences,
+              style: AppText.body(15),
+              decoration: const InputDecoration(hintText: 'Misal: Lab Komputer, Google Meet'),
+            ),
+            const SizedBox(height: 10),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _repeatWeekly,
+              onChanged: (v) => setState(() => _repeatWeekly = v),
+              title: Text('Ulangi setiap minggu', style: AppText.body(14, weight: FontWeight.w800)),
+              activeThumbColor: AppColors.yellow,
+            ),
+            const SizedBox(height: 16),
+            BoldButton(label: 'Simpan Jadwal', onPressed: _save),
+          ],
+        ),
+      ),
     );
   }
 }
