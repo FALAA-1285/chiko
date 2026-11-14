@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 
+import '../../../app/app_scope.dart';
 import '../../../app/theme.dart';
 import '../../../core/mascot/chiko.dart';
 import '../../../core/utils/clock.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/bold.dart';
 import '../../tasks/data/task_store.dart';
-import '../data/event_store.dart';
+import '../../tasks/ui/task_sheet.dart';
+import '../../tasks/ui/task_style.dart';
+import '../data/span_layout.dart';
+import 'event_sheet.dart';
+import 'event_style.dart';
 import 'widgets/event_tile.dart';
 
 class CalendarPage extends StatefulWidget {
@@ -43,30 +48,19 @@ class _CalendarPageState extends State<CalendarPage> {
     return List.generate(42, (i) => DateTime(start.year, start.month, start.day + i));
   }
 
-  void _openAddEventSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        side: BorderSide(color: AppColors.ink, width: 2),
-      ),
-      builder: (context) => _AddEventSheet(initialDate: _selected),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final events = EventStore.instance;
+    final app = AppScope.of(context);
+    final events = app.events;
+    final tasks = app.tasks;
     return Scaffold(
       floatingActionButton: AddFab(
         tooltip: 'Tambah jadwal',
-        onPressed: () => _openAddEventSheet(context),
+        onPressed: () => bukaFormJadwal(context, tanggal: _selected),
       ),
       body: SafeArea(
         child: ListenableBuilder(
-          listenable: Listenable.merge([events, TaskStore.instance]),
+          listenable: Listenable.merge([events, tasks]),
           builder: (context, _) {
             final now = sekarang();
             var days = _gridDays();
@@ -75,6 +69,7 @@ class _CalendarPageState extends State<CalendarPage> {
               days = days.sublist(row * 7, row * 7 + 7);
             }
             final agenda = events.agendaOn(_selected);
+            final berjalan = tasks.spanningOn(_selected);
 
             return ListView(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 110),
@@ -137,32 +132,33 @@ class _CalendarPageState extends State<CalendarPage> {
                       ),
                       const SizedBox(height: 6),
                       for (var r = 0; r < days.length ~/ 7; r++)
-                        Row(
-                          children: [
-                            for (final d in days.sublist(r * 7, r * 7 + 7))
-                              Expanded(
-                                child: _DayCell(
-                                  day: d,
-                                  inMonth: d.month == _month.month,
-                                  selected: samaHari(d, _selected),
-                                  today: samaHari(d, now),
-                                  dots: events.dotsOn(d),
-                                  onTap: () => setState(() {
-                                    _selected = d;
-                                    if (d.month != _month.month) _month = DateTime(d.year, d.month);
-                                  }),
-                                ),
-                              ),
-                          ],
+                        // Sel tanggal berukuran tetap: skala teks dibatasi supaya angka tidak terpotong.
+                        MediaQuery.withClampedTextScaling(
+                          maxScaleFactor: 1.3,
+                          child: _WeekRow(
+                            days: days.sublist(r * 7, r * 7 + 7),
+                            bars: layoutWeek(days[r * 7], tasks.spansBetween(days[r * 7], days[r * 7 + 6])),
+                            month: _month,
+                            selected: _selected,
+                            now: now,
+                            dotsOf: (d) => [for (final t in events.typesOn(d)) t.dot],
+                            onSelect: (d) => setState(() {
+                              _selected = d;
+                              if (d.month != _month.month) _month = DateTime(d.year, d.month);
+                            }),
+                          ),
                         ),
                       const Divider(height: 18, thickness: 1.5, color: AppColors.line),
                       const Wrap(
                         spacing: 14,
+                        runSpacing: 4,
                         alignment: WrapAlignment.center,
                         children: [
                           _Legend(color: AppColors.kuliahDot, label: 'Kuliah'),
                           _Legend(color: AppColors.kerjaDot, label: 'Kerja'),
+                          _Legend(color: AppColors.pribadiDot, label: 'Pribadi'),
                           _Legend(color: AppColors.danger, label: 'Deadline'),
+                          _Legend(color: AppColors.ink, label: 'Blok = rentang proyek', bar: true),
                         ],
                       ),
                     ],
@@ -174,7 +170,20 @@ class _CalendarPageState extends State<CalendarPage> {
                   trailing: agenda.isEmpty ? null : '${agenda.length} acara',
                 ),
                 const SizedBox(height: 10),
-                if (agenda.isEmpty)
+                if (berjalan.isNotEmpty) ...[
+                  const _SubLabel('Proyek berjalan'),
+                  const SizedBox(height: 8),
+                  for (final t in berjalan) ...[
+                    _SpanTile(task: t, day: _selected, onTap: () => bukaFormTugas(context, task: t)),
+                    const SizedBox(height: 10),
+                  ],
+                  if (agenda.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    const _SubLabel('Jadwal & deadline'),
+                    const SizedBox(height: 8),
+                  ],
+                ],
+                if (agenda.isEmpty && berjalan.isEmpty)
                   BoldCard(
                     padding: const EdgeInsets.fromLTRB(4, 6, 16, 6),
                     child: Row(
@@ -183,7 +192,9 @@ class _CalendarPageState extends State<CalendarPage> {
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
-                            'Hari ini kosong. Pas buat istirahat atau mencicil tugas.',
+                            samaHari(_selected, now)
+                                ? 'Hari ini kosong. Pas buat istirahat atau mencicil tugas.'
+                                : 'Tidak ada acara di tanggal ini.',
                             style: AppText.body(15, weight: FontWeight.w700, height: 1.45),
                           ),
                         ),
@@ -192,7 +203,15 @@ class _CalendarPageState extends State<CalendarPage> {
                   )
                 else
                   for (final e in agenda) ...[
-                    EventTile(event: e),
+                    EventTile(
+                      event: e,
+                      onTap: () {
+                        final entry = e.entryId == null ? null : events.byId(e.entryId!);
+                        final task = e.taskId == null ? null : tasks.byId(e.taskId!);
+                        if (entry != null) bukaFormJadwal(context, entry: entry);
+                        if (task != null) bukaFormTugas(context, task: task);
+                      },
+                    ),
                     const SizedBox(height: 10),
                   ],
               ],
@@ -212,8 +231,14 @@ class _DayCell extends StatelessWidget {
     required this.today,
     required this.dots,
     required this.onTap,
+    this.height = 50,
+    this.extraLabel = '',
   });
 
+  final double height;
+
+  /// Tambahan label pembaca layar, mis. proyek yang berjalan di hari ini.
+  final String extraLabel;
   final DateTime day;
   final bool inMonth;
   final bool selected;
@@ -224,7 +249,8 @@ class _DayCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = '${namaHari(day)} ${day.day} ${namaBulan(day.month)}'
-        '${dots.isEmpty ? '' : ', ada acara'}';
+        '${dots.isEmpty ? '' : ', ada acara'}'
+        '${extraLabel.isEmpty ? '' : ', berjalan: $extraLabel'}';
     return Semantics(
       label: label,
       selected: selected,
@@ -234,7 +260,7 @@ class _DayCell extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(18),
         child: SizedBox(
-          height: 50,
+          height: height,
           child: Column(
             children: [
               AnimatedContainer(
@@ -255,7 +281,7 @@ class _DayCell extends StatelessWidget {
                   style: AppText.body(
                     15,
                     weight: selected || today ? FontWeight.w900 : FontWeight.w700,
-                    color: inMonth ? AppColors.ink : const Color(0xFFB8AE99),
+                    color: inMonth ? AppColors.ink : const Color(0xFF8C8370),
                   ),
                 ),
               ),
@@ -281,17 +307,28 @@ class _DayCell extends StatelessWidget {
 }
 
 class _Legend extends StatelessWidget {
-  const _Legend({required this.color, required this.label});
+  const _Legend({required this.color, required this.label, this.bar = false});
 
   final Color color;
   final String label;
+  final bool bar;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        bar
+            ? Container(
+                width: 18,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: AppColors.yellowSoft,
+                  borderRadius: BorderRadius.circular(3),
+                  border: Border.all(color: color, width: 1.5),
+                ),
+              )
+            : Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
         const SizedBox(width: 5),
         Text(label, style: AppText.body(12, weight: FontWeight.w800, color: AppColors.inkSoft)),
       ],
@@ -299,212 +336,219 @@ class _Legend extends StatelessWidget {
   }
 }
 
-class _AddEventSheet extends StatefulWidget {
-  const _AddEventSheet({required this.initialDate});
+/// Satu baris minggu: 7 sel tanggal + blok proyek berentang di bawah angka tanggal.
+class _WeekRow extends StatelessWidget {
+  const _WeekRow({
+    required this.days,
+    required this.bars,
+    required this.month,
+    required this.selected,
+    required this.now,
+    required this.dotsOf,
+    required this.onSelect,
+  });
 
-  final DateTime initialDate;
+  final List<DateTime> days;
+  final List<SpanBar> bars;
+  final DateTime month;
+  final DateTime selected;
+  final DateTime now;
+  final List<Color> Function(DateTime) dotsOf;
+  final ValueChanged<DateTime> onSelect;
 
-  @override
-  State<_AddEventSheet> createState() => _AddEventSheetState();
-}
-
-class _AddEventSheetState extends State<_AddEventSheet> {
-  final _titleController = TextEditingController();
-  final _placeController = TextEditingController();
-  EventType _type = EventType.kuliah;
-  late DateTime _date = widget.initialDate;
-  TimeOfDay _startTime = const TimeOfDay(hour: 9, minute: 0);
-  TimeOfDay _endTime = const TimeOfDay(hour: 11, minute: 0);
-  bool _repeatWeekly = false;
-
-  @override
-  void dispose() {
-    _titleController.dispose();
-    _placeController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _pickDate() async {
-    final now = sekarang();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _date,
-      firstDate: DateTime(now.year - 1),
-      lastDate: DateTime(now.year + 2),
-      helpText: 'Tanggal acara',
-    );
-    if (picked != null) setState(() => _date = picked);
-  }
-
-  Future<void> _pickStartTime() async {
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: _startTime,
-      helpText: 'Jam mulai',
-    );
-    if (picked != null) setState(() => _startTime = picked);
-  }
-
-  Future<void> _pickEndTime() async {
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: _endTime,
-      helpText: 'Jam selesai',
-    );
-    if (picked != null) setState(() => _endTime = picked);
-  }
-
-  void _save() {
-    final title = _titleController.text.trim();
-    if (title.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Judul jadwal tidak boleh kosong.')));
-      return;
-    }
-    final start = DateTime(_date.year, _date.month, _date.day, _startTime.hour, _startTime.minute);
-    final end = DateTime(_date.year, _date.month, _date.day, _endTime.hour, _endTime.minute);
-    final place = _placeController.text.trim();
-
-    EventStore.instance.add(
-      ScheduleEntry(
-        title: title,
-        type: _type,
-        start: start,
-        end: end,
-        place: place.isEmpty ? '' : place,
-        repeatWeekly: _repeatWeekly,
-        repeatUntil: _repeatWeekly ? DateTime(_date.year, 12, 31) : null,
-      ),
-    );
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Jadwal "$title" berhasil ditambahkan.')));
-    Navigator.pop(context);
-  }
+  static const _maxLanes = 3;
+  static const _barTop = 50.0;
+  static const _barHeight = 15.0;
+  static const _barGap = 2.0;
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-    final availableTypes = [EventType.kuliah, EventType.kerja, EventType.pribadi];
+    final visible = bars.where((b) => b.lane < _maxLanes).toList();
+    final hidden = bars.where((b) => b.lane >= _maxLanes).toList();
+    final lanes = visible.isEmpty ? 0 : visible.map((b) => b.lane).reduce((a, b) => a > b ? a : b) + 1;
+    final overflowRow = hidden.isNotEmpty ? 1 : 0;
+    final height = _barTop + (lanes + overflowRow) * (_barHeight + _barGap) + (lanes > 0 ? 4 : 0);
 
-    return Padding(
-      padding: EdgeInsets.fromLTRB(20, 16, 20, 20 + bottomInset),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(child: Text('Tambah Jadwal Baru', style: AppText.display(22, weight: FontWeight.w600))),
-                RoundIconButton(
-                  icon: Icons.close_rounded,
-                  tooltip: 'Tutup',
-                  size: 38,
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Text('Judul Acara / Kuliah', style: AppText.body(13, weight: FontWeight.w800, color: AppColors.muted)),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _titleController,
-              autofocus: true,
-              textCapitalization: TextCapitalization.sentences,
-              style: AppText.body(15),
-              decoration: const InputDecoration(hintText: 'Misal: Kuliah Basis Data, Rapat Divisi'),
-            ),
-            const SizedBox(height: 14),
-            Text('Jenis Acara', style: AppText.body(13, weight: FontWeight.w800, color: AppColors.muted)),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final t in availableTypes)
-                  ChoicePill(
-                    label: t.label,
-                    selected: _type == t,
-                    selectedColor: t.ink,
-                    selectedText: AppColors.white,
-                    onTap: () => setState(() => _type = t),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Text('Tanggal & Waktu', style: AppText.body(13, weight: FontWeight.w800, color: AppColors.muted)),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _pickDate,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.ink,
-                      backgroundColor: AppColors.white,
-                      side: const BorderSide(color: AppColors.ink, width: 2),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      minimumSize: const Size(0, 48),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cellW = constraints.maxWidth / 7;
+        return SizedBox(
+          height: height,
+          child: Stack(
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (var c = 0; c < 7; c++)
+                    Expanded(
+                      child: _DayCell(
+                        day: days[c],
+                        height: height,
+                        inMonth: days[c].month == month.month,
+                        selected: samaHari(days[c], selected),
+                        today: samaHari(days[c], now),
+                        dots: dotsOf(days[c]),
+                        extraLabel: bars.where((b) => b.covers(c)).map((b) => b.task.title).join(', '),
+                        onTap: () => onSelect(days[c]),
+                      ),
                     ),
-                    icon: const Icon(Icons.calendar_month_rounded, size: 18),
-                    label: Text(tanggalPendek(_date), style: AppText.body(13, weight: FontWeight.w800)),
-                  ),
+                ],
+              ),
+              // Blok tidak menangkap ketukan, jadi ketukan tetap memilih tanggal di bawahnya.
+              for (final b in visible)
+                Positioned(
+                  left: b.startCol * cellW + (b.continuesLeft ? 0 : 2),
+                  width: (b.endCol - b.startCol + 1) * cellW - (b.continuesLeft ? 0 : 2) - (b.continuesRight ? 0 : 2),
+                  top: _barTop + b.lane * (_barHeight + _barGap),
+                  height: _barHeight,
+                  child: IgnorePointer(child: _SpanBarView(bar: b, now: now)),
                 ),
-                const SizedBox(width: 8),
-                OutlinedButton(
-                  onPressed: _pickStartTime,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.ink,
-                    backgroundColor: AppColors.white,
-                    side: const BorderSide(color: AppColors.ink, width: 2),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    minimumSize: const Size(0, 48),
+              for (var c = 0; c < 7; c++)
+                if (hidden.any((b) => b.covers(c)))
+                  Positioned(
+                    left: c * cellW,
+                    width: cellW,
+                    top: _barTop + lanes * (_barHeight + _barGap),
+                    height: _barHeight,
+                    child: IgnorePointer(
+                      child: Center(
+                        child: Text(
+                          '+${hidden.where((b) => b.covers(c)).length}',
+                          style: AppText.body(10, weight: FontWeight.w900, color: AppColors.muted),
+                        ),
+                      ),
+                    ),
                   ),
-                  child: Text(
-                    '${_startTime.hour.toString().padLeft(2, '0')}:${_startTime.minute.toString().padLeft(2, '0')}',
-                    style: AppText.body(13, weight: FontWeight.w800),
-                  ),
-                ),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 4),
-                  child: Text('–', style: TextStyle(fontWeight: FontWeight.bold)),
-                ),
-                OutlinedButton(
-                  onPressed: _pickEndTime,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.ink,
-                    backgroundColor: AppColors.white,
-                    side: const BorderSide(color: AppColors.ink, width: 2),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    minimumSize: const Size(0, 48),
-                  ),
-                  child: Text(
-                    '${_endTime.hour.toString().padLeft(2, '0')}:${_endTime.minute.toString().padLeft(2, '0')}',
-                    style: AppText.body(13, weight: FontWeight.w800),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Text('Lokasi / Ruangan (opsional)', style: AppText.body(13, weight: FontWeight.w800, color: AppColors.muted)),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _placeController,
-              textCapitalization: TextCapitalization.sentences,
-              style: AppText.body(15),
-              decoration: const InputDecoration(hintText: 'Misal: Lab Komputer, Google Meet'),
-            ),
-            const SizedBox(height: 10),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              value: _repeatWeekly,
-              onChanged: (v) => setState(() => _repeatWeekly = v),
-              title: Text('Ulangi setiap minggu', style: AppText.body(14, weight: FontWeight.w800)),
-              activeThumbColor: AppColors.yellow,
-            ),
-            const SizedBox(height: 16),
-            BoldButton(label: 'Simpan Jadwal', onPressed: _save),
-          ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SpanBarView extends StatelessWidget {
+  const _SpanBarView({required this.bar, required this.now});
+
+  final SpanBar bar;
+  final DateTime now;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = bar.task;
+    final terlambat = t.isOverdue(now);
+    final border = terlambat ? AppColors.danger : t.category.dot;
+    final side = BorderSide(color: border, width: 1.5);
+    return Opacity(
+      opacity: t.done ? 0.5 : 1,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        alignment: Alignment.centerLeft,
+        decoration: BoxDecoration(
+          color: terlambat ? AppColors.expenseSoft : t.category.soft,
+          borderRadius: BorderRadius.horizontal(
+            left: Radius.circular(bar.continuesLeft ? 0 : 5),
+            right: Radius.circular(bar.continuesRight ? 0 : 5),
+          ),
+          border: Border(
+            top: side,
+            bottom: side,
+            left: bar.continuesLeft ? BorderSide.none : BorderSide(color: border, width: 3),
+            right: bar.continuesRight ? BorderSide.none : side,
+          ),
+        ),
+        child: Text(
+          bar.continuesLeft ? '... ${t.title}' : t.title,
+          maxLines: 1,
+          overflow: TextOverflow.clip,
+          softWrap: false,
+          style: AppText.body(10, weight: FontWeight.w800, color: terlambat ? AppColors.expenseInk : t.category.ink)
+              .copyWith(
+            height: 1.1,
+            decoration: t.done ? TextDecoration.lineThrough : null,
+          ),
         ),
       ),
+    );
+  }
+}
+
+/// Kartu proyek yang sedang berjalan di tanggal terpilih, dengan progres waktunya.
+class _SpanTile extends StatelessWidget {
+  const _SpanTile({required this.task, required this.day, required this.onTap});
+
+  final Task task;
+  final DateTime day;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = task.durasiHari;
+    final ke = (selisihHari(task.startAt!, day) + 1).clamp(1, total);
+    final sisa = selisihHari(day, task.dueAt);
+    final status = task.done
+        ? 'Sudah selesai'
+        : sisa == 0
+            ? 'Hari terakhir · deadline ${jam(task.dueAt)}'
+            : 'Hari ke-$ke dari $total · sisa $sisa hari';
+    return Semantics(
+      button: true,
+      child: GestureDetector(
+        onTap: onTap,
+        child: BoldCard(
+          color: task.category.soft,
+          radius: 18,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  TagChip(
+                      label: task.category.label,
+                      background: AppColors.white,
+                      foreground: task.category.ink,
+                      outlined: true),
+                  const SizedBox(width: 8),
+                  Icon(Icons.date_range_rounded, size: 15, color: task.category.ink),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      rentangTanggal(task.startAt!, task.dueAt),
+                      style: AppText.body(13, weight: FontWeight.w800, color: task.category.ink),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                task.title,
+                style: AppText.body(16, weight: FontWeight.w800, height: 1.3).copyWith(
+                  decoration: task.done ? TextDecoration.lineThrough : null,
+                ),
+              ),
+              const SizedBox(height: 8),
+              BoldProgressBar(value: task.done ? 1 : ke / total, fill: task.category.dot),
+              const SizedBox(height: 6),
+              Text(status, style: AppText.body(12, weight: FontWeight.w700, color: AppColors.inkSoft)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SubLabel extends StatelessWidget {
+  const _SubLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text.toUpperCase(),
+      style: AppText.body(13, weight: FontWeight.w900, color: AppColors.muted).copyWith(letterSpacing: 0.8),
     );
   }
 }

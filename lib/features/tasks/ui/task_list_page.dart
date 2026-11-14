@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 
+import '../../../app/app_scope.dart';
 import '../../../app/theme.dart';
 import '../../../core/mascot/chiko.dart';
 import '../../../core/utils/clock.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../core/widgets/aksi.dart';
 import '../../../core/widgets/bold.dart';
+import '../../../core/widgets/swipe_to_delete.dart';
 import '../data/task_store.dart';
+import 'task_sheet.dart';
 import 'widgets/task_tile.dart';
 
 class TaskListPage extends StatefulWidget {
@@ -28,62 +32,43 @@ class _TaskListPageState extends State<TaskListPage> {
     super.dispose();
   }
 
-  /// Kelompok berdasarkan jarak deadline dari hari ini.
+  /// Kelompok berdasarkan deadline: Terlambat, Hari ini, Besok, Minggu ini (s.d. Minggu), Nanti.
   String _groupOf(Task t, DateTime now) {
-    final selisih = tanpaJam(t.dueAt).difference(tanpaJam(now)).inDays;
-    if (selisih < 0) return 'Terlambat';
-    if (selisih == 0) return 'Hari ini';
+    if (t.isOverdue(now)) return 'Terlambat';
+    final selisih = selisihHari(now, t.dueAt);
+    if (selisih <= 0) return 'Hari ini';
     if (selisih == 1) return 'Besok';
-    if (selisih <= 7) return 'Minggu ini';
+    if (selisih <= 7 - now.weekday) return 'Minggu ini';
     return 'Nanti';
   }
 
-  void _openAddTaskSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        side: BorderSide(color: AppColors.ink, width: 2),
-      ),
-      builder: (context) => const _AddTaskSheet(),
-    );
+  bool _cocok(String text) => _searchQuery.isEmpty || text.toLowerCase().contains(_searchQuery.toLowerCase());
+
+  Future<void> _deleteTask(TaskStore store, Task t) => jalankanAksi(
+        context,
+        () => store.remove(t),
+        pesanSukses: 'Tugas "${t.title}" dihapus.',
+        onUndo: () => store.restore(t),
+      );
+
+  void _stopSearch() {
+    _searchController.clear();
+    setState(() {
+      _isSearching = false;
+      _searchQuery = '';
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final store = TaskStore.instance;
+    final store = AppScope.of(context).tasks;
     return Scaffold(
-      floatingActionButton: AddFab(
-        tooltip: 'Tambah tugas',
-        onPressed: () => _openAddTaskSheet(context),
-      ),
+      floatingActionButton: AddFab(tooltip: 'Tambah tugas', onPressed: () => bukaFormTugas(context)),
       body: SafeArea(
         child: ListenableBuilder(
           listenable: store,
           builder: (context, _) {
             final now = sekarang();
-            final minggu = store.thisWeek(now);
-            final selesaiMinggu = minggu.where((t) => t.done).length;
-            final source = _showDone ? store.completed : store.active;
-            final list = source.where((t) {
-              final matchCategory = _filter == null || t.category == _filter;
-              final matchQuery = _searchQuery.isEmpty ||
-                  t.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-                  (t.groupName?.toLowerCase().contains(_searchQuery.toLowerCase()) ?? false);
-              return matchCategory && matchQuery;
-            }).toList();
-
-            final groups = <String, List<Task>>{};
-            if (_showDone) {
-              if (list.isNotEmpty) groups['Sudah selesai'] = list;
-            } else {
-              for (final t in list) {
-                groups.putIfAbsent(_groupOf(t, now), () => []).add(t);
-              }
-            }
-
             return ListView(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 110),
               children: [
@@ -99,6 +84,7 @@ class _TaskListPageState extends State<TaskListPage> {
                             hintText: 'Cari tugas...',
                             prefixIcon: const Icon(Icons.search_rounded, color: AppColors.ink),
                             suffixIcon: IconButton(
+                              tooltip: 'Hapus pencarian',
                               icon: const Icon(Icons.clear_rounded, color: AppColors.ink),
                               onPressed: () {
                                 _searchController.clear();
@@ -111,13 +97,8 @@ class _TaskListPageState extends State<TaskListPage> {
                       ),
                       const SizedBox(width: 8),
                       TextButton(
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() {
-                            _isSearching = false;
-                            _searchQuery = '';
-                          });
-                        },
+                        onPressed: _stopSearch,
+                        style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
                         child: Text('Batal', style: AppText.body(14, weight: FontWeight.w800)),
                       ),
                     ],
@@ -134,42 +115,7 @@ class _TaskListPageState extends State<TaskListPage> {
                     ],
                   ),
                 const SizedBox(height: 16),
-                _ProgressCard(done: selesaiMinggu, total: minggu.length),
-                const SizedBox(height: 16),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      ChoicePill(label: 'Semua', selected: _filter == null, onTap: () => setState(() => _filter = null)),
-                      for (final c in TaskCategory.values) ...[
-                        const SizedBox(width: 8),
-                        ChoicePill(label: c.label, selected: _filter == c, onTap: () => setState(() => _filter = c)),
-                      ],
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
-                SegmentedPills(
-                  labels: ['Aktif · ${store.active.length}', 'Selesai · ${store.completed.length}'],
-                  selectedIndex: _showDone ? 1 : 0,
-                  onChanged: (i) => setState(() => _showDone = i == 1),
-                ),
-                const SizedBox(height: 18),
-                if (groups.isEmpty)
-                  _EmptyState(showDone: _showDone)
-                else
-                  for (final entry in groups.entries) ...[
-                    Text(
-                      entry.key.toUpperCase(),
-                      style: AppText.body(13, weight: FontWeight.w900, color: AppColors.muted).copyWith(letterSpacing: 0.8),
-                    ),
-                    const SizedBox(height: 8),
-                    for (final t in entry.value) ...[
-                      TaskTile(task: t, now: now, onToggle: () => store.toggle(t)),
-                      const SizedBox(height: 10),
-                    ],
-                    const SizedBox(height: 8),
-                  ],
+                ..._buildTaskView(store, now),
               ],
             );
           },
@@ -177,201 +123,144 @@ class _TaskListPageState extends State<TaskListPage> {
       ),
     );
   }
+
+  List<Widget> _buildTaskView(TaskStore store, DateTime now) {
+    final minggu = store.thisWeek(now);
+    final selesaiMinggu = minggu.where((t) => t.done).length;
+    final terlambat = store.active.where((t) => t.isOverdue(now)).length;
+    final source = _showDone ? store.completed : store.active;
+    final list = source.where((t) {
+      final matchCategory = _filter == null || t.category == _filter;
+      return matchCategory && (_cocok(t.title) || _cocok(t.groupName ?? ''));
+    }).toList();
+
+    final groups = <String, List<Task>>{};
+    if (_showDone) {
+      if (list.isNotEmpty) groups['Sudah selesai'] = list;
+    } else {
+      for (final t in list) {
+        groups.putIfAbsent(_groupOf(t, now), () => []).add(t);
+      }
+    }
+
+    return [
+      _ProgressCard(done: selesaiMinggu, total: minggu.length, overdue: terlambat),
+      const SizedBox(height: 16),
+      SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            ChoicePill(label: 'Semua', selected: _filter == null, onTap: () => setState(() => _filter = null)),
+            for (final c in TaskCategory.values) ...[
+              const SizedBox(width: 8),
+              ChoicePill(label: c.label, selected: _filter == c, onTap: () => setState(() => _filter = c)),
+            ],
+          ],
+        ),
+      ),
+      const SizedBox(height: 14),
+      SegmentedPills(
+        labels: ['Aktif · ${store.active.length}', 'Selesai · ${store.completed.length}'],
+        selectedIndex: _showDone ? 1 : 0,
+        onChanged: (i) => setState(() => _showDone = i == 1),
+      ),
+      const SizedBox(height: 18),
+      if (groups.isEmpty)
+        _EmptyState(
+          mood: _showDone || _searchQuery.isNotEmpty || store.all.isEmpty ? ChikoMood.santai : ChikoMood.rayakan,
+          message: _searchQuery.isNotEmpty
+              ? 'Tidak ada tugas yang cocok dengan "$_searchQuery".'
+              : store.all.isEmpty
+                  ? 'Belum ada tugas. Ketuk tombol + untuk menambah tugas pertamamu.'
+                  : _showDone
+                      ? 'Belum ada tugas yang selesai di kategori ini.'
+                      : 'Tidak ada tugas di sini. Kamu bebas!',
+        )
+      else ...[
+        for (final entry in groups.entries) ...[
+          _GroupLabel(entry.key, color: entry.key == 'Terlambat' ? AppColors.expenseInk : AppColors.muted),
+          const SizedBox(height: 8),
+          for (final t in entry.value) ...[
+            SwipeToDelete(
+              key: ValueKey('task-${t.id}'),
+              radius: 18,
+              label: 'Hapus tugas ${t.title}',
+              onDelete: () => _deleteTask(store, t),
+              child: TaskTile(
+                task: t,
+                now: now,
+                onToggle: () => jalankanAksi(context, () => store.toggle(t)),
+                onOpen: () => bukaFormTugas(context, task: t),
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+          const SizedBox(height: 8),
+        ],
+        const _Hint('Ketuk tugas untuk mengubah. Geser ke kiri untuk menghapus.'),
+      ],
+    ];
+  }
 }
 
-class _AddTaskSheet extends StatefulWidget {
-  const _AddTaskSheet();
+class _GroupLabel extends StatelessWidget {
+  const _GroupLabel(this.text, {this.color = AppColors.muted});
 
-  @override
-  State<_AddTaskSheet> createState() => _AddTaskSheetState();
-}
-
-class _AddTaskSheetState extends State<_AddTaskSheet> {
-  final _titleController = TextEditingController();
-  final _groupController = TextEditingController();
-  TaskCategory _category = TaskCategory.kuliah;
-  Priority _priority = Priority.sedang;
-  late DateTime _dueDate = sekarang().add(const Duration(days: 1));
-
-  @override
-  void dispose() {
-    _titleController.dispose();
-    _groupController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _pickDate() async {
-    final now = sekarang();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _dueDate,
-      firstDate: DateTime(now.year - 1),
-      lastDate: DateTime(now.year + 2),
-      helpText: 'Tanggal deadline',
-    );
-    if (picked != null) {
-      setState(() => _dueDate = DateTime(picked.year, picked.month, picked.day, _dueDate.hour, _dueDate.minute));
-    }
-  }
-
-  Future<void> _pickTime() async {
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay(hour: _dueDate.hour, minute: _dueDate.minute),
-      helpText: 'Jam deadline',
-    );
-    if (picked != null) {
-      setState(() => _dueDate = DateTime(_dueDate.year, _dueDate.month, _dueDate.day, picked.hour, picked.minute));
-    }
-  }
-
-  void _save() {
-    final title = _titleController.text.trim();
-    if (title.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Judul tugas tidak boleh kosong.')));
-      return;
-    }
-    final group = _groupController.text.trim();
-    TaskStore.instance.add(
-      title: title,
-      category: _category,
-      dueAt: _dueDate,
-      priority: _priority,
-      groupName: group.isEmpty ? null : group,
-    );
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Tugas "$title" berhasil ditambahkan.')));
-    Navigator.pop(context);
-  }
+  final String text;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(20, 16, 20, 20 + bottomInset),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(child: Text('Tambah Tugas Baru', style: AppText.display(22, weight: FontWeight.w600))),
-                RoundIconButton(
-                  icon: Icons.close_rounded,
-                  tooltip: 'Tutup',
-                  size: 38,
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Text('Judul Tugas', style: AppText.body(13, weight: FontWeight.w800, color: AppColors.muted)),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _titleController,
-              autofocus: true,
-              textCapitalization: TextCapitalization.sentences,
-              style: AppText.body(15),
-              decoration: const InputDecoration(hintText: 'Misal: Laporan Praktikum PCVK'),
-            ),
-            const SizedBox(height: 14),
-            Text('Mata Kuliah / Proyek (opsional)', style: AppText.body(13, weight: FontWeight.w800, color: AppColors.muted)),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _groupController,
-              textCapitalization: TextCapitalization.words,
-              style: AppText.body(15),
-              decoration: const InputDecoration(hintText: 'Misal: PCVK, Basis Data'),
-            ),
-            const SizedBox(height: 14),
-            Text('Kategori', style: AppText.body(13, weight: FontWeight.w800, color: AppColors.muted)),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final c in TaskCategory.values)
-                  ChoicePill(
-                    label: c.label,
-                    selected: _category == c,
-                    selectedColor: c.ink,
-                    selectedText: AppColors.white,
-                    onTap: () => setState(() => _category = c),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Text('Prioritas', style: AppText.body(13, weight: FontWeight.w800, color: AppColors.muted)),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final p in Priority.values)
-                  ChoicePill(
-                    label: p.label,
-                    selected: _priority == p,
-                    selectedColor: p.color,
-                    selectedText: AppColors.white,
-                    onTap: () => setState(() => _priority = p),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Text('Deadline', style: AppText.body(13, weight: FontWeight.w800, color: AppColors.muted)),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _pickDate,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.ink,
-                      backgroundColor: AppColors.white,
-                      side: const BorderSide(color: AppColors.ink, width: 2),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      minimumSize: const Size(0, 48),
-                    ),
-                    icon: const Icon(Icons.calendar_today_rounded, size: 18),
-                    label: Text(tanggalPendek(_dueDate), style: AppText.body(13, weight: FontWeight.w800)),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _pickTime,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.ink,
-                      backgroundColor: AppColors.white,
-                      side: const BorderSide(color: AppColors.ink, width: 2),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      minimumSize: const Size(0, 48),
-                    ),
-                    icon: const Icon(Icons.access_time_rounded, size: 18),
-                    label: Text(jam(_dueDate), style: AppText.body(13, weight: FontWeight.w800)),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            BoldButton(label: 'Simpan Tugas', onPressed: _save),
-          ],
-        ),
+    return Semantics(
+      header: true,
+      child: Text(
+        text.toUpperCase(),
+        style: AppText.body(13, weight: FontWeight.w900, color: color).copyWith(letterSpacing: 0.8),
       ),
     );
   }
 }
 
-class _ProgressCard extends StatelessWidget {
-  const _ProgressCard({required this.done, required this.total});
+class _Hint extends StatelessWidget {
+  const _Hint(this.text);
 
-  final int done;
-  final int total;
+  final String text;
 
   @override
   Widget build(BuildContext context) {
-    final semua = total > 0 && done == total;
+    return Center(
+      child: Text(text, textAlign: TextAlign.center, style: AppText.body(12, color: AppColors.muted)),
+    );
+  }
+}
+
+class _ProgressCard extends StatelessWidget {
+  const _ProgressCard({required this.done, required this.total, this.overdue = 0});
+
+  final int done;
+  final int total;
+  final int overdue;
+
+  @override
+  Widget build(BuildContext context) {
+    final kosong = total == 0;
+    final semua = !kosong && done == total;
     final sisa = total - done;
+    final judul = kosong ? 'Tidak ada deadline minggu ini' : '$done dari $total tugas minggu ini selesai';
+    final pesan = overdue > 0
+        ? '$overdue tugas sudah lewat deadline. Kerjakan itu dulu, ya!'
+        : kosong
+            ? 'Minggu yang lega. Pakai buat istirahat atau mencicil.'
+            : semua
+                ? 'Semua beres. Waktunya santai!'
+                : 'Sisa $sisa lagi. Satu-satu saja, ya!';
+    final mood = overdue > 0
+        ? ChikoMood.khawatir
+        : semua
+            ? ChikoMood.rayakan
+            : kosong
+                ? ChikoMood.santai
+                : ChikoMood.senang;
     return BoldCard(
       color: AppColors.yellowSoft,
       radius: 24,
@@ -379,19 +268,20 @@ class _ProgressCard extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(4, 10, 16, 12),
       child: Row(
         children: [
-          Chiko(mood: semua ? ChikoMood.rayakan : ChikoMood.senang, size: 104),
+          Chiko(mood: mood, size: 104),
           const SizedBox(width: 6),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('$done dari $total tugas minggu ini selesai', style: AppText.display(18, weight: FontWeight.w600)),
+                Text(judul, style: AppText.display(18, weight: FontWeight.w600)),
                 const SizedBox(height: 8),
-                BoldProgressBar(value: total == 0 ? 0 : done / total),
+                BoldProgressBar(value: kosong ? 0 : done / total),
                 const SizedBox(height: 8),
                 Text(
-                  semua ? 'Semua beres. Waktunya santai!' : 'Sisa $sisa lagi. Satu-satu saja, ya!',
-                  style: AppText.body(13, weight: FontWeight.w700, color: AppColors.inkSoft),
+                  pesan,
+                  style: AppText.body(13,
+                      weight: FontWeight.w700, color: overdue > 0 ? AppColors.expenseInk : AppColors.inkSoft),
                 ),
               ],
             ),
@@ -403,9 +293,10 @@ class _ProgressCard extends StatelessWidget {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.showDone});
+  const _EmptyState({required this.mood, required this.message});
 
-  final bool showDone;
+  final ChikoMood mood;
+  final String message;
 
   @override
   Widget build(BuildContext context) {
@@ -413,10 +304,10 @@ class _EmptyState extends StatelessWidget {
       padding: const EdgeInsets.only(top: 12),
       child: Column(
         children: [
-          Chiko(mood: showDone ? ChikoMood.santai : ChikoMood.rayakan, size: 150),
+          Chiko(mood: mood, size: 150),
           const SizedBox(height: 8),
           Text(
-            showDone ? 'Belum ada tugas yang selesai di kategori ini.' : 'Tidak ada tugas di sini. Kamu bebas!',
+            message,
             textAlign: TextAlign.center,
             style: AppText.body(15, weight: FontWeight.w700, color: AppColors.inkSoft),
           ),

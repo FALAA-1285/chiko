@@ -1,12 +1,43 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/app_scope.dart';
 import '../../app/theme.dart';
 import '../../core/mascot/chiko.dart';
+import '../../core/widgets/aksi.dart';
 import '../../core/widgets/bold.dart';
 
-class SambutanPage extends StatelessWidget {
+class SambutanPage extends StatefulWidget {
   const SambutanPage({super.key});
+
+  @override
+  State<SambutanPage> createState() => _SambutanPageState();
+}
+
+class _SambutanPageState extends State<SambutanPage> {
+  final _nama = TextEditingController();
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _nama.dispose();
+    super.dispose();
+  }
+
+  /// Simpan nama (opsional) dan tandai Sambutan selesai, supaya tidak muncul lagi.
+  Future<void> _mulai() async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    final settings = AppScope.of(context).settings;
+    final router = GoRouter.of(context);
+    final ok = await jalankanAksi(context, () async {
+      if (_nama.text.trim().isNotEmpty) await settings.setNamaPengguna(_nama.text);
+      await settings.selesaikanOnboarding();
+    });
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (ok) router.go('/beranda');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -25,7 +56,7 @@ class SambutanPage extends StatelessWidget {
                       Align(
                         alignment: Alignment.centerRight,
                         child: TextButton(
-                          onPressed: () => context.go('/beranda'),
+                          onPressed: _saving ? null : _mulai,
                           style: TextButton.styleFrom(foregroundColor: AppColors.ink, minimumSize: const Size(44, 44)),
                           child: Text('Lewati', style: AppText.body(15, weight: FontWeight.w800)),
                         ),
@@ -46,23 +77,31 @@ class SambutanPage extends StatelessWidget {
                         runSpacing: 8,
                         children: [
                           _FeaturePill(icon: Icons.task_alt_rounded, label: 'Tugas', color: AppColors.kerjaSoft),
-                          _FeaturePill(icon: Icons.calendar_month_rounded, label: 'Kalender', color: AppColors.kuliahSoft),
-                          _FeaturePill(icon: Icons.account_balance_wallet_rounded, label: 'Keuangan', color: AppColors.incomeSoft),
+                          _FeaturePill(
+                              icon: Icons.calendar_month_rounded, label: 'Kalender', color: AppColors.kuliahSoft),
+                          _FeaturePill(
+                              icon: Icons.account_balance_wallet_rounded,
+                              label: 'Keuangan',
+                              color: AppColors.incomeSoft),
                         ],
+                      ),
+                      const SizedBox(height: 20),
+                      TextField(
+                        controller: _nama,
+                        maxLength: 30,
+                        textCapitalization: TextCapitalization.words,
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) => _mulai(),
+                        style: AppText.body(15),
+                        decoration: const InputDecoration(
+                          labelText: 'Mau dipanggil apa? (opsional)',
+                          hintText: 'Misal: Ahmad',
+                          counterText: '',
+                        ),
                       ),
                       const Spacer(),
                       const SizedBox(height: 16),
-                      const _PageDots(),
-                      const SizedBox(height: 16),
-                      BoldButton(label: 'Mulai', onPressed: () => context.go('/beranda')),
-                      const SizedBox(height: 6),
-                      TextButton(
-                        onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Fitur pulihkan data menyusul di versi berikutnya.')),
-                        ),
-                        style: TextButton.styleFrom(foregroundColor: AppColors.inkSoft),
-                        child: Text('Sudah punya backup? Pulihkan data', style: AppText.body(14, weight: FontWeight.w700, color: AppColors.inkSoft)),
-                      ),
+                      BoldButton(label: _saving ? 'Menyiapkan…' : 'Mulai', onPressed: _saving ? null : _mulai),
                     ],
                   ),
                 ),
@@ -98,7 +137,8 @@ class _Hero extends StatelessWidget {
             ),
           ),
           Positioned(top: size * 0.08, right: size * 0.12, child: _Bubble(size: size * 0.18, color: AppColors.pink)),
-          Positioned(bottom: size * 0.12, left: size * 0.08, child: _Bubble(size: size * 0.12, color: AppColors.kuliahSoft)),
+          Positioned(
+              bottom: size * 0.12, left: size * 0.08, child: _Bubble(size: size * 0.12, color: AppColors.kuliahSoft)),
           Chiko(mood: ChikoMood.santai, size: size),
         ],
       ),
@@ -117,7 +157,8 @@ class _Bubble extends StatelessWidget {
     return Container(
       width: size,
       height: size,
-      decoration: BoxDecoration(color: color, shape: BoxShape.circle, border: Border.all(color: AppColors.ink, width: 2)),
+      decoration:
+          BoxDecoration(color: color, shape: BoxShape.circle, border: Border.all(color: AppColors.ink, width: 2)),
     );
   }
 }
@@ -145,26 +186,6 @@ class _FeaturePill extends StatelessWidget {
           const SizedBox(width: 6),
           Text(label, style: AppText.body(13, weight: FontWeight.w800)),
         ],
-      ),
-    );
-  }
-}
-
-class _PageDots extends StatelessWidget {
-  const _PageDots();
-
-  @override
-  Widget build(BuildContext context) {
-    Widget dot(double w, Color c) => Container(
-          width: w,
-          height: 8,
-          margin: const EdgeInsets.symmetric(horizontal: 3),
-          decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(4)),
-        );
-    return ExcludeSemantics(
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [dot(24, AppColors.ink), dot(8, AppColors.line), dot(8, AppColors.line)],
       ),
     );
   }

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter/services.dart';
 
 /// Palet warna app. Diambil dari warna Chiko: kuning celemek, oranye paruh,
 /// pink pipi, dan garis hitam tebal.
@@ -45,6 +45,7 @@ class AppColors {
 }
 
 /// Dua keluarga huruf: Fredoka untuk judul, Nunito untuk teks.
+/// Keduanya dibundel di assets/fonts (lihat pubspec.yaml), jadi tidak butuh internet.
 class AppText {
   AppText._();
 
@@ -53,7 +54,7 @@ class AppText {
     FontWeight weight = FontWeight.w700,
     Color color = AppColors.ink,
   }) =>
-      GoogleFonts.fredoka(fontSize: size, fontWeight: weight, color: color, height: 1.15);
+      TextStyle(fontFamily: 'Fredoka', fontSize: size, fontWeight: weight, color: color, height: 1.15);
 
   static TextStyle body(
     double size, {
@@ -61,12 +62,13 @@ class AppText {
     Color color = AppColors.ink,
     double? height,
   }) =>
-      GoogleFonts.nunito(fontSize: size, fontWeight: weight, color: color, height: height);
+      TextStyle(fontFamily: 'Nunito', fontSize: size, fontWeight: weight, color: color, height: height);
 }
 
 ThemeData buildTheme() {
   final base = ThemeData(
     useMaterial3: true,
+    fontFamily: 'Nunito',
     colorScheme: ColorScheme.fromSeed(
       seedColor: AppColors.yellow,
       primary: AppColors.ink,
@@ -78,7 +80,38 @@ ThemeData buildTheme() {
   );
 
   return base.copyWith(
-    textTheme: GoogleFonts.nunitoTextTheme(base.textTheme).apply(
+    appBarTheme: const AppBarTheme(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      systemOverlayStyle: SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark,
+        statusBarBrightness: Brightness.light,
+      ),
+    ),
+    bottomSheetTheme: const BottomSheetThemeData(
+      backgroundColor: AppColors.white,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        side: BorderSide(color: AppColors.ink, width: 2),
+      ),
+    ),
+    dialogTheme: const DialogThemeData(
+      backgroundColor: AppColors.white,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(24)),
+        side: BorderSide(color: AppColors.ink, width: 2),
+      ),
+    ),
+    dividerTheme: const DividerThemeData(
+      color: AppColors.line,
+      thickness: 1.5,
+      space: 1,
+    ),
+    textTheme: base.textTheme.apply(
+      fontFamily: 'Nunito',
       bodyColor: AppColors.ink,
       displayColor: AppColors.ink,
     ),

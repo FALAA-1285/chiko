@@ -4,40 +4,54 @@ import '../../../../app/theme.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/bold.dart';
 import '../../data/task_store.dart';
+import '../task_style.dart';
 
 /// Baris tugas dengan kotak centang.
+/// Kotak centang menandai selesai; mengetuk bagian lain membuka detail ([onOpen]).
 /// [boxed] = kartu sendiri (layar Tugas); false = baris di dalam kartu (Beranda).
 class TaskTile extends StatelessWidget {
-  const TaskTile({super.key, required this.task, required this.now, required this.onToggle, this.boxed = true});
+  const TaskTile({
+    super.key,
+    required this.task,
+    required this.now,
+    required this.onToggle,
+    required this.onOpen,
+    this.boxed = true,
+  });
 
   final Task task;
   final DateTime now;
   final VoidCallback onToggle;
+  final VoidCallback onOpen;
   final bool boxed;
 
   @override
   Widget build(BuildContext context) {
     final urgent = task.isUrgent(now);
-    final content = MergeSemantics(
+    final overdue = task.isOverdue(now);
+    final content = Semantics(
+      button: true,
+      hint: 'Ketuk untuk melihat atau mengubah tugas',
       child: InkWell(
-        onTap: onToggle,
+        onTap: onOpen,
         borderRadius: BorderRadius.circular(18),
         child: Padding(
           padding: boxed ? const EdgeInsets.all(12) : const EdgeInsets.symmetric(vertical: 10),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Area sentuh 40x40 walau kotaknya kecil, supaya mudah dicentang.
               SizedBox(
-                width: 30,
-                height: 30,
+                width: 40,
+                height: 40,
                 child: Checkbox(
                   value: task.done,
                   onChanged: (_) => onToggle(),
                   materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
+                  semanticLabel: task.done ? 'Tandai "${task.title}" belum selesai' : 'Tandai "${task.title}" selesai',
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 4),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -63,9 +77,17 @@ class TaskTile extends StatelessWidget {
                         ),
                         _Meta(
                           icon: Icons.schedule_rounded,
-                          text: labelDeadline(task.dueAt, now),
+                          text: overdue
+                              ? 'Terlambat · ${labelDeadline(task.dueAt, now)}'
+                              : labelDeadline(task.dueAt, now),
                           color: urgent ? AppColors.expenseInk : AppColors.inkSoft,
                         ),
+                        if (boxed && task.hasSpan)
+                          _Meta(
+                            icon: Icons.date_range_rounded,
+                            text: rentangTanggal(task.startAt!, task.dueAt),
+                            color: AppColors.inkSoft,
+                          ),
                         if (boxed)
                           _Meta(icon: Icons.flag_rounded, text: task.priority.label, color: task.priority.color),
                       ],

@@ -1,7 +1,7 @@
-import '../../features/finance/data/finance_store.dart';
-import '../../features/tasks/data/task_store.dart';
-import '../utils/formatters.dart';
-import 'chiko.dart';
+import '../../core/mascot/chiko.dart';
+import '../../core/utils/formatters.dart';
+import '../finance/data/finance_store.dart';
+import '../tasks/data/task_store.dart';
 
 /// Apa yang Chiko rasakan dan katakan di Beranda.
 class ChikoStatus {
@@ -17,10 +17,22 @@ class ChikoStatus {
 const batasSaldoMenipis = 50000;
 
 /// Menentukan ekspresi Chiko dari data tugas dan keuangan.
-/// Urutan prioritas: malam > deadline mepet > saldo menipis > semua beres > baru menyelesaikan tugas > santai.
+/// Urutan prioritas: malam > tugas terlambat > deadline mepet > saldo menipis > semua beres > baru menyelesaikan tugas > santai.
 ChikoStatus hitungMood({required DateTime now, required TaskStore tasks, required FinanceStore finance}) {
   if (now.hour >= 22 || now.hour < 5) {
     return const ChikoStatus(ChikoMood.tidur, 'Sudah malam. Istirahat dulu, besok kita lanjut.');
+  }
+
+  final terlambat = tasks.active.where((t) => t.isOverdue(now)).toList();
+  if (terlambat.isNotEmpty) {
+    final t = terlambat.first;
+    final lainnya = terlambat.length > 1 ? ' (+${terlambat.length - 1} lainnya)' : '';
+    return ChikoStatus(
+      ChikoMood.kaget,
+      '${t.title} sudah lewat deadline$lainnya. Yuk, selesaikan secepatnya!',
+      action: 'Lihat tugas',
+      route: '/tugas',
+    );
   }
 
   final mepet = tasks.active.where((t) => t.isUrgent(now)).toList();
@@ -35,10 +47,14 @@ ChikoStatus hitungMood({required DateTime now, required TaskStore tasks, require
     );
   }
 
-  final dompet = finance.accounts.where((a) => a.type == AccountType.cash).toList();
+  // Hanya akun tunai yang sudah dipakai (punya saldo awal atau transaksi), supaya pengguna baru
+  // dengan Dompet Rp 0 tidak langsung "dimarahi".
+  final dompet = finance.accounts
+      .where((a) => a.type == AccountType.cash && (a.initialBalance > 0 || finance.accountInUse(a.id)))
+      .toList();
   for (final a in dompet) {
     final saldo = finance.balanceOf(a.id);
-    if (saldo < batasSaldoMenipis) {
+    if (saldo <= batasSaldoMenipis) {
       return ChikoStatus(
         ChikoMood.kaget,
         'Saldo ${a.name} tinggal ${rupiah(saldo)}. Hemat dulu, ya!',

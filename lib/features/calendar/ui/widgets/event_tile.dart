@@ -3,17 +3,21 @@ import 'package:flutter/material.dart';
 import '../../../../app/theme.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/bold.dart';
-import '../../data/event_store.dart';
+import '../../data/event_model.dart';
+import '../event_style.dart';
 
 /// Satu acara di agenda: jam di kiri, kartu berwarna kategori di kanan.
 class EventTile extends StatelessWidget {
-  const EventTile({super.key, required this.event});
+  const EventTile({super.key, required this.event, this.onTap});
 
   final CalendarEvent event;
 
+  /// Membuka detail (ubah/hapus). Null = tidak bisa diketuk.
+  final VoidCallback? onTap;
+
   @override
   Widget build(BuildContext context) {
-    return IntrinsicHeight(
+    final tile = IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -40,7 +44,8 @@ class EventTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  TagChip(label: event.type.label, background: AppColors.white, foreground: event.type.ink, outlined: true),
+                  TagChip(
+                      label: event.type.label, background: AppColors.white, foreground: event.type.ink, outlined: true),
                   const SizedBox(height: 6),
                   Text(event.title, style: AppText.body(16, weight: FontWeight.w800, height: 1.3)),
                   if (event.place.isNotEmpty) ...[
@@ -53,6 +58,12 @@ class EventTile extends StatelessWidget {
           ),
         ],
       ),
+    );
+    if (onTap == null) return tile;
+    return Semantics(
+      button: true,
+      hint: 'Ketuk untuk melihat atau mengubah',
+      child: GestureDetector(onTap: onTap, behavior: HitTestBehavior.opaque, child: tile),
     );
   }
 }

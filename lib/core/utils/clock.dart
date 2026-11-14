@@ -1,9 +1,11 @@
-/// Waktu "sekarang" untuk data contoh, supaya tampilan sama dengan desain
-/// (Senin, 16 November 2026).
-///
-/// Setelah data asli dari database (drift) terpasang, ganti isinya dengan:
-///   DateTime sekarang() => DateTime.now();
-DateTime sekarang() => DateTime(2026, 11, 16, 10, 0);
+import 'package:flutter/foundation.dart';
 
-/// Nama yang muncul di sapaan Beranda. Nanti ambil dari Pengaturan.
-const namaPengguna = 'Ahmad';
+DateTime Function() _jam = DateTime.now;
+
+/// Waktu sekarang. Semua logika tanggal memakai fungsi ini (bukan `DateTime.now()`
+/// langsung) supaya test bisa memakai jam tetap lewat [aturJam].
+DateTime sekarang() => _jam();
+
+/// Khusus test: ganti sumber waktu. Panggil `aturJam(DateTime.now)` untuk mengembalikan.
+@visibleForTesting
+void aturJam(DateTime Function() jam) => _jam = jam;

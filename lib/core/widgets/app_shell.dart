@@ -21,29 +21,33 @@ class AppShell extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       body: navigationShell,
-      bottomNavigationBar: DecoratedBox(
-        decoration: const BoxDecoration(
-          color: AppColors.white,
-          border: Border(top: BorderSide(color: AppColors.ink, width: 2)),
-        ),
-        child: SafeArea(
-          top: false,
-          child: SizedBox(
-            height: 66,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-              child: Row(
-                children: [
-                  for (var i = 0; i < _items.length; i++)
-                    Expanded(
-                      child: _NavItem(
-                        icon: _items[i].$1,
-                        label: _items[i].$2,
-                        selected: navigationShell.currentIndex == i,
-                        onTap: () => navigationShell.goBranch(i, initialLocation: i == navigationShell.currentIndex),
+      // Tinggi bilah tetap, jadi skala teks dibatasi supaya label tidak terpotong.
+      bottomNavigationBar: MediaQuery.withClampedTextScaling(
+        maxScaleFactor: 1.3,
+        child: DecoratedBox(
+          decoration: const BoxDecoration(
+            color: AppColors.white,
+            border: Border(top: BorderSide(color: AppColors.ink, width: 2)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: SizedBox(
+              height: 66,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                child: Row(
+                  children: [
+                    for (var i = 0; i < _items.length; i++)
+                      Expanded(
+                        child: _NavItem(
+                          icon: _items[i].$1,
+                          label: _items[i].$2,
+                          selected: navigationShell.currentIndex == i,
+                          onTap: () => navigationShell.goBranch(i, initialLocation: i == navigationShell.currentIndex),
+                        ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

@@ -1,54 +1,47 @@
-import 'package:flutter/material.dart';
+/// Model keuangan — Dart murni. Gaya tampilan (ikon, warna) ada di `ui/finance_style.dart`.
+enum AccountType {
+  bank('Bank'),
+  cash('Tunai'),
+  ewallet('E-wallet');
 
-import '../../../app/theme.dart';
+  const AccountType(this.label);
+  final String label;
+}
 
-enum AccountType { bank, cash, ewallet }
-
-/// Sesuai tabel `accounts` di dokumen rancangan.
+/// Sesuai tabel `accounts`.
 class Account {
   const Account({
     required this.id,
     required this.name,
     required this.type,
     required this.initialBalance,
-    required this.color,
+    required this.colorValue,
   });
 
-  final String id;
+  final int id;
   final String name;
   final AccountType type;
 
   /// Saldo saat mulai memakai app, dalam rupiah.
   final int initialBalance;
-  final Color color;
 
-  IconData get icon => switch (type) {
-        AccountType.bank => Icons.account_balance_rounded,
-        AccountType.cash => Icons.account_balance_wallet_rounded,
-        AccountType.ewallet => Icons.phone_iphone_rounded,
-      };
+  /// Warna kartu (ARGB).
+  final int colorValue;
+
+  @override
+  bool operator ==(Object other) => other is Account && other.id == id;
+
+  @override
+  int get hashCode => id.hashCode;
 }
 
-enum TxnKind { expense, income, transfer }
+enum TxnKind {
+  expense('Pengeluaran'),
+  income('Pemasukan'),
+  transfer('Transfer');
 
-extension TxnKindStyle on TxnKind {
-  String get label => switch (this) {
-        TxnKind.expense => 'Pengeluaran',
-        TxnKind.income => 'Pemasukan',
-        TxnKind.transfer => 'Transfer',
-      };
-
-  Color get soft => switch (this) {
-        TxnKind.expense => AppColors.expenseSoft,
-        TxnKind.income => AppColors.incomeSoft,
-        TxnKind.transfer => AppColors.transferSoft,
-      };
-
-  Color get ink => switch (this) {
-        TxnKind.expense => AppColors.expenseInk,
-        TxnKind.income => AppColors.incomeInk,
-        TxnKind.transfer => AppColors.ink,
-      };
+  const TxnKind(this.label);
+  final String label;
 }
 
 /// Sesuai tabel `categories`.
@@ -57,21 +50,29 @@ class TxnCategory {
     required this.id,
     required this.name,
     required this.kind,
-    required this.icon,
-    required this.color,
-    required this.soft,
+    required this.iconKey,
+    required this.colorValue,
+    required this.softValue,
   });
 
-  final String id;
+  final int id;
   final String name;
   final TxnKind kind;
-  final IconData icon;
 
-  /// Warna di grafik.
-  final Color color;
+  /// Kunci ikon, dipetakan ke ikon di `finance_style.dart`.
+  final String iconKey;
 
-  /// Warna latar ikon di daftar transaksi.
-  final Color soft;
+  /// Warna di grafik (ARGB).
+  final int colorValue;
+
+  /// Warna latar ikon di daftar transaksi (ARGB).
+  final int softValue;
+
+  @override
+  bool operator ==(Object other) => other is TxnCategory && other.id == id;
+
+  @override
+  int get hashCode => id.hashCode;
 }
 
 /// Sesuai tabel `transactions`. Nominal selalu positif, dalam rupiah.
@@ -90,9 +91,15 @@ class Txn {
   final int id;
   final TxnKind kind;
   final int amount;
-  final String accountId;
-  final String? toAccountId;
-  final String? categoryId;
+  final int accountId;
+  final int? toAccountId;
+  final int? categoryId;
   final String note;
   final DateTime date;
+
+  @override
+  bool operator ==(Object other) => other is Txn && other.id == id;
+
+  @override
+  int get hashCode => id.hashCode;
 }

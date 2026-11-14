@@ -90,36 +90,40 @@ class RoundIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Tombol nonaktif (onPressed null) dibuat pudar supaya terlihat tidak bisa diketuk.
     return Tooltip(
       message: tooltip,
-      child: Material(
-        color: background,
-        shape: const CircleBorder(side: BorderSide(color: AppColors.ink, width: 2)),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onPressed,
-          child: SizedBox(
-            width: size,
-            height: size,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                Icon(icon, size: size * 0.48, color: AppColors.ink),
-                if (badge)
-                  Positioned(
-                    top: size * 0.18,
-                    right: size * 0.2,
-                    child: Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: AppColors.danger,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: AppColors.white, width: 2),
+      child: Opacity(
+        opacity: onPressed == null ? 0.35 : 1,
+        child: Material(
+          color: background,
+          shape: const CircleBorder(side: BorderSide(color: AppColors.ink, width: 2)),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onPressed,
+            child: SizedBox(
+              width: size,
+              height: size,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Icon(icon, size: size * 0.48, color: AppColors.ink),
+                  if (badge)
+                    Positioned(
+                      top: size * 0.18,
+                      right: size * 0.2,
+                      child: Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: AppColors.danger,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: AppColors.white, width: 2),
+                        ),
                       ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -197,7 +201,8 @@ class SectionHeader extends StatelessWidget {
 
 /// Label kecil berbentuk pil (kategori tugas, jenis jadwal).
 class TagChip extends StatelessWidget {
-  const TagChip({super.key, required this.label, required this.background, required this.foreground, this.outlined = false});
+  const TagChip(
+      {super.key, required this.label, required this.background, required this.foreground, this.outlined = false});
 
   final String label;
   final Color background;
@@ -256,7 +261,8 @@ class ChoicePill extends StatelessWidget {
                 widthFactor: 1,
                 child: Text(
                   label,
-                  style: AppText.body(compact ? 13 : 14, weight: FontWeight.w800, color: selected ? selectedText : AppColors.ink),
+                  style: AppText.body(compact ? 13 : 14,
+                      weight: FontWeight.w800, color: selected ? selectedText : AppColors.ink),
                 ),
               ),
             ),
@@ -307,7 +313,9 @@ class SegmentedPills extends StatelessWidget {
             alignment: Alignment.center,
             child: Text(
               labels[i],
-              style: AppText.body(14, weight: selected ? FontWeight.w900 : FontWeight.w700, color: selected ? AppColors.ink : AppColors.inkSoft),
+              style: AppText.body(14,
+                  weight: selected ? FontWeight.w900 : FontWeight.w700,
+                  color: selected ? AppColors.ink : AppColors.inkSoft),
             ),
           ),
         ),

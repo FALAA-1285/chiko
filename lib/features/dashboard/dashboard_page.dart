@@ -1,26 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/app_scope.dart';
 import '../../app/theme.dart';
 import '../../core/mascot/chiko.dart';
-import '../../core/mascot/chiko_mood.dart';
 import '../../core/utils/clock.dart';
 import '../../core/utils/formatters.dart';
+import '../../core/widgets/aksi.dart';
 import '../../core/widgets/bold.dart';
-import '../calendar/data/event_store.dart';
 import '../calendar/ui/widgets/event_tile.dart';
-import '../finance/data/finance_store.dart';
 import '../tasks/data/task_store.dart';
+import '../tasks/ui/task_sheet.dart';
 import '../tasks/ui/widgets/task_tile.dart';
+import 'chiko_mood.dart';
 
 class DashboardPage extends StatelessWidget {
   const DashboardPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final tasks = TaskStore.instance;
-    final finance = FinanceStore.instance;
-    final events = EventStore.instance;
+    final app = AppScope.of(context);
+    final tasks = app.tasks;
+    final finance = app.finance;
+    final events = app.events;
+    final settings = app.settings;
 
     return Scaffold(
       floatingActionButton: AddFab(
@@ -29,7 +32,7 @@ class DashboardPage extends StatelessWidget {
       ),
       body: SafeArea(
         child: ListenableBuilder(
-          listenable: Listenable.merge([tasks, finance, events]),
+          listenable: Listenable.merge([tasks, finance, events, settings]),
           builder: (context, _) {
             final now = sekarang();
             final status = hitungMood(now: now, tasks: tasks, finance: finance);
@@ -42,17 +45,35 @@ class DashboardPage extends StatelessWidget {
             return ListView(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 110),
               children: [
-                _Header(now: now),
+                _Header(now: now, nama: settings.namaPengguna, tasks: tasks),
                 const SizedBox(height: 18),
                 _ChikoCard(status: status),
                 const SizedBox(height: 18),
                 Row(
                   children: [
-                    Expanded(child: _StatTile(value: '${jadwal.length}', label: 'jadwal hari ini', color: AppColors.kuliahSoft, ink: AppColors.kuliahInk)),
+                    Expanded(
+                        child: _StatTile(
+                            value: '${jadwal.length}',
+                            label: 'jadwal hari ini',
+                            color: AppColors.kuliahSoft,
+                            ink: AppColors.kuliahInk,
+                            icon: Icons.calendar_today_rounded)),
                     const SizedBox(width: 10),
-                    Expanded(child: _StatTile(value: '${tasks.active.length}', label: 'tugas aktif', color: AppColors.kerjaSoft, ink: AppColors.kerjaInk)),
+                    Expanded(
+                        child: _StatTile(
+                            value: '${tasks.active.length}',
+                            label: 'tugas aktif',
+                            color: AppColors.kerjaSoft,
+                            ink: AppColors.kerjaInk,
+                            icon: Icons.task_alt_rounded)),
                     const SizedBox(width: 10),
-                    Expanded(child: _StatTile(value: rupiahSingkat(finance.expenseOn(now)), label: 'keluar hari ini', color: AppColors.expenseSoft, ink: AppColors.expenseInk)),
+                    Expanded(
+                        child: _StatTile(
+                            value: rupiahSingkat(finance.expenseOn(now)),
+                            label: 'keluar hari ini',
+                            color: AppColors.expenseSoft,
+                            ink: AppColors.expenseInk,
+                            icon: Icons.account_balance_wallet_rounded)),
                   ],
                 ),
                 const SizedBox(height: 20),
@@ -78,8 +99,15 @@ class DashboardPage extends StatelessWidget {
                       : Column(
                           children: [
                             for (var i = 0; i < terdekat.length; i++) ...[
-                              TaskTile(task: terdekat[i], now: now, boxed: false, onToggle: () => tasks.toggle(terdekat[i])),
-                              if (i < terdekat.length - 1) const Divider(height: 1, thickness: 1.5, color: AppColors.line),
+                              TaskTile(
+                                task: terdekat[i],
+                                now: now,
+                                boxed: false,
+                                onToggle: () => jalankanAksi(context, () => tasks.toggle(terdekat[i])),
+                                onOpen: () => bukaFormTugas(context, task: terdekat[i]),
+                              ),
+                              if (i < terdekat.length - 1)
+                                const Divider(height: 1, thickness: 1.5, color: AppColors.line),
                             ],
                           ],
                         ),
@@ -87,7 +115,8 @@ class DashboardPage extends StatelessWidget {
                 const SizedBox(height: 20),
                 SectionHeader(title: 'Uangmu bulan ini', action: 'Detail', onAction: () => context.go('/keuangan')),
                 const SizedBox(height: 4),
-                _MoneyCard(total: finance.totalBalance, accounts: finance.accounts.length, masuk: masuk, keluar: keluar),
+                _MoneyCard(
+                    total: finance.totalBalance, accounts: finance.accounts.length, masuk: masuk, keluar: keluar),
               ],
             );
           },
@@ -98,12 +127,13 @@ class DashboardPage extends StatelessWidget {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.now});
+  const _Header({required this.now, required this.nama, required this.tasks});
 
   final DateTime now;
+  final String nama;
+  final TaskStore tasks;
 
   void _showNotifications(BuildContext context) {
-    final tasks = TaskStore.instance;
     final mepet = tasks.active.where((t) => t.isUrgent(now)).toList();
     final selesai = tasks.completedOn(now);
 
@@ -148,7 +178,12 @@ class _Header extends StatelessWidget {
                     child: Icon(Icons.warning_amber_rounded, color: AppColors.expenseInk),
                   ),
                   title: Text(t.title, style: AppText.body(15, weight: FontWeight.w800)),
-                  subtitle: Text('Deadline: ${labelDeadline(t.dueAt, now)}', style: AppText.body(13, color: AppColors.muted)),
+                  subtitle: Text(
+                    t.isOverdue(now)
+                        ? 'Terlambat · ${labelDeadline(t.dueAt, now)}'
+                        : 'Deadline: ${labelDeadline(t.dueAt, now)}',
+                    style: AppText.body(13, color: t.isOverdue(now) ? AppColors.expenseInk : AppColors.muted),
+                  ),
                 ),
                 const Divider(height: 1, color: AppColors.line),
               ],
@@ -181,14 +216,14 @@ class _Header extends StatelessWidget {
             children: [
               Text(tanggalPanjang(now), style: AppText.body(14, weight: FontWeight.w700, color: AppColors.muted)),
               const SizedBox(height: 2),
-              Text('Halo, $namaPengguna!', style: AppText.display(30)),
+              Text(nama.isEmpty ? 'Halo!' : 'Halo, $nama!', style: AppText.display(30)),
             ],
           ),
         ),
         RoundIconButton(
           icon: Icons.notifications_none_rounded,
           tooltip: 'Notifikasi',
-          badge: true,
+          badge: tasks.active.any((t) => t.isUrgent(now)) || tasks.completedOn(now).isNotEmpty,
           onPressed: () => _showNotifications(context),
         ),
       ],
@@ -261,12 +296,19 @@ class _ChikoCard extends StatelessWidget {
 }
 
 class _StatTile extends StatelessWidget {
-  const _StatTile({required this.value, required this.label, required this.color, required this.ink});
+  const _StatTile({
+    required this.value,
+    required this.label,
+    required this.color,
+    required this.ink,
+    required this.icon,
+  });
 
   final String value;
   final String label;
   final Color color;
   final Color ink;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
@@ -277,17 +319,25 @@ class _StatTile extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(value, style: AppText.display(24)),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(value, style: AppText.display(24)),
+                ),
+              ),
+              Icon(icon, size: 16, color: ink.withValues(alpha: 0.6)),
+            ],
           ),
-          const SizedBox(height: 2),
+          const SizedBox(height: 4),
           Text(
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: AppText.body(12, weight: FontWeight.w700, color: ink),
+            style: AppText.body(11, weight: FontWeight.w800, color: ink),
           ),
         ],
       ),
@@ -312,7 +362,8 @@ class _MoneyCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Total saldo · $accounts akun', style: AppText.body(13, weight: FontWeight.w700, color: AppColors.darkMuted)),
+          Text('Total saldo · $accounts akun',
+              style: AppText.body(13, weight: FontWeight.w700, color: AppColors.darkMuted)),
           const SizedBox(height: 2),
           Text(rupiah(total), style: AppText.display(30, color: AppColors.yellow)),
           const SizedBox(height: 14),

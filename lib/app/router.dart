@@ -9,32 +9,36 @@ import '../features/onboarding/sambutan_page.dart';
 import '../features/settings/settings_page.dart';
 import '../features/tasks/ui/task_list_page.dart';
 
-final appRouter = GoRouter(
-  initialLocation: '/sambutan',
-  routes: [
-    GoRoute(path: '/sambutan', builder: (context, state) => const SambutanPage()),
-    // Layar penuh di atas navigasi bawah.
-    GoRoute(path: '/tambah-transaksi', builder: (context, state) => const AddTransactionPage()),
-    // 5 tab dengan navigasi bawah. Tiap tab menyimpan posisinya sendiri.
-    StatefulShellRoute.indexedStack(
-      builder: (context, state, navigationShell) => AppShell(navigationShell: navigationShell),
-      branches: [
-        StatefulShellBranch(routes: [
-          GoRoute(path: '/beranda', builder: (context, state) => const DashboardPage()),
-        ]),
-        StatefulShellBranch(routes: [
-          GoRoute(path: '/tugas', builder: (context, state) => const TaskListPage()),
-        ]),
-        StatefulShellBranch(routes: [
-          GoRoute(path: '/kalender', builder: (context, state) => const CalendarPage()),
-        ]),
-        StatefulShellBranch(routes: [
-          GoRoute(path: '/keuangan', builder: (context, state) => const FinancePage()),
-        ]),
-        StatefulShellBranch(routes: [
-          GoRoute(path: '/pengaturan', builder: (context, state) => const SettingsPage()),
-        ]),
+GoRouter createRouter({required String initialLocation}) => GoRouter(
+      initialLocation: initialLocation,
+      routes: [
+        GoRoute(path: '/sambutan', builder: (context, state) => const SambutanPage()),
+        // Layar penuh di atas navigasi bawah.
+        GoRoute(path: '/tambah-transaksi', builder: (context, state) => const AddTransactionPage()),
+        GoRoute(
+          path: '/transaksi/:id',
+          builder: (context, state) => AddTransactionPage(editId: int.tryParse(state.pathParameters['id'] ?? '')),
+        ),
+        // 5 tab dengan navigasi bawah. Tiap tab menyimpan posisinya sendiri.
+        StatefulShellRoute.indexedStack(
+          builder: (context, state, navigationShell) => AppShell(navigationShell: navigationShell),
+          branches: [
+            StatefulShellBranch(routes: [
+              GoRoute(path: '/beranda', builder: (context, state) => const DashboardPage()),
+            ]),
+            StatefulShellBranch(routes: [
+              GoRoute(path: '/tugas', builder: (context, state) => const TaskListPage()),
+            ]),
+            StatefulShellBranch(routes: [
+              GoRoute(path: '/kalender', builder: (context, state) => const CalendarPage()),
+            ]),
+            StatefulShellBranch(routes: [
+              GoRoute(path: '/keuangan', builder: (context, state) => const FinancePage()),
+            ]),
+            StatefulShellBranch(routes: [
+              GoRoute(path: '/pengaturan', builder: (context, state) => const SettingsPage()),
+            ]),
+          ],
+        ),
       ],
-    ),
-  ],
-);
+    );

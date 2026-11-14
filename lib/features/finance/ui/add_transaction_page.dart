@@ -1,29 +1,62 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../app/app_scope.dart';
 import '../../../app/theme.dart';
 import '../../../core/utils/clock.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../core/widgets/aksi.dart';
 import '../../../core/widgets/bold.dart';
 import '../data/finance_store.dart';
+import 'finance_style.dart';
 
+/// Tambah transaksi baru, atau ubah/hapus transaksi [editId].
 class AddTransactionPage extends StatefulWidget {
-  const AddTransactionPage({super.key});
+  const AddTransactionPage({super.key, this.editId});
+
+  final int? editId;
 
   @override
   State<AddTransactionPage> createState() => _AddTransactionPageState();
 }
 
 class _AddTransactionPageState extends State<AddTransactionPage> {
-  final _store = FinanceStore.instance;
+  late final FinanceStore _store = AppScope.of(context).finance;
   final _note = TextEditingController();
 
   TxnKind _kind = TxnKind.expense;
   String _amount = '0';
-  String _from = 'dompet';
-  String _to = 'dompet';
-  String? _category = 'makan';
+  int? _from;
+  int? _to;
+  int? _category;
   late DateTime _date = sekarang();
+  Txn? _editing;
+  bool _saving = false;
+  bool _initialized = false;
+
+  bool get _isEdit => _editing != null;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_initialized) return;
+    _initialized = true;
+    final txn = widget.editId == null ? null : _store.txnById(widget.editId!);
+    if (txn != null) {
+      _editing = txn;
+      _kind = txn.kind;
+      _amount = '${txn.amount}';
+      _from = txn.accountId;
+      _to = txn.toAccountId;
+      _category = txn.categoryId;
+      _date = txn.date;
+      _note.text = txn.note;
+    } else {
+      // Bawaan dari data, bukan ID yang ditulis langsung.
+      _from = _store.defaultAccount?.id;
+      _category = _store.categoriesFor(_kind).firstOrNull?.id;
+    }
+  }
 
   @override
   void dispose() {
@@ -35,10 +68,15 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
     setState(() {
       _kind = kind;
       final cats = _store.categoriesFor(kind);
-      _category = cats.isEmpty ? null : cats.first.id;
+      if (!cats.any((c) => c.id == _category)) _category = cats.firstOrNull?.id;
       if (kind == TxnKind.transfer) {
-        _from = 'bri';
-        _to = 'dompet';
+        // Bawaan "tarik tunai": dari bank ke akun tunai. Kalau asalnya sudah bank, pertahankan.
+        final accounts = _store.accounts;
+        final cash = accounts.where((a) => a.type == AccountType.cash).firstOrNull ?? accounts.lastOrNull;
+        if (cash != null && accounts.length > 1) {
+          if (_from == cash.id) _from = accounts.firstWhere((a) => a.id != cash.id).id;
+          _to = cash.id;
+        }
       }
     });
   }
@@ -50,6 +88,7 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
         a = a.isEmpty ? '' : a.substring(0, a.length - 1);
       } else if (a.length < 10) {
         a += key;
+        if (a.length > 10) a = a.substring(0, 10);
       }
       a = a.replaceFirst(RegExp(r'^0+'), '');
       _amount = a.isEmpty ? '0' : a;
@@ -60,40 +99,77 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
     final now = sekarang();
     final picked = await showDatePicker(
       context: context,
-      initialDate: _date,
-      firstDate: DateTime(now.year - 1),
-      lastDate: DateTime(now.year + 1),
+      initialDate: _date.isAfter(now) ? now : _date,
+      firstDate: DateTime(now.year - 2),
+      // Transaksi masa depan akan langsung mengubah saldo sekarang, jadi dibatasi sampai hari ini.
+      lastDate: now,
       helpText: 'Tanggal transaksi',
     );
-    if (picked != null) setState(() => _date = DateTime(picked.year, picked.month, picked.day, _date.hour, _date.minute));
+    if (picked != null) {
+      setState(() => _date = DateTime(picked.year, picked.month, picked.day, _date.hour, _date.minute));
+    }
   }
 
-  void _save() {
+  Future<void> _save() async {
+    if (_saving) return; // cegah simpan dua kali
+    final from = _from;
+    if (from == null) {
+      tampilkanPesan(ScaffoldMessenger.of(context), 'Tambahkan akun dulu di Pengaturan.');
+      return;
+    }
+    setState(() => _saving = true);
     final amount = int.parse(_amount);
-    final messenger = ScaffoldMessenger.of(context);
-    if (amount <= 0) {
-      messenger.showSnackBar(const SnackBar(content: Text('Isi nominalnya dulu, ya.')));
-      return;
-    }
-    if (_kind == TxnKind.transfer && _from == _to) {
-      messenger.showSnackBar(const SnackBar(content: Text('Akun asal dan tujuan tidak boleh sama.')));
-      return;
-    }
-    _store.add(
-      kind: _kind,
-      amount: amount,
-      accountId: _from,
-      toAccountId: _kind == TxnKind.transfer ? _to : null,
-      categoryId: _kind == TxnKind.transfer ? null : _category,
-      note: _note.text.trim(),
-      date: _date,
+    final router = GoRouter.of(context);
+    final ok = await jalankanAksi(
+      context,
+      () => _store.saveTxn(
+        kind: _kind,
+        amount: amount,
+        accountId: from,
+        toAccountId: _kind == TxnKind.transfer ? _to : null,
+        categoryId: _kind == TxnKind.transfer ? null : _category,
+        note: _note.text,
+        date: _date,
+        now: sekarang(),
+        editingId: _editing?.id,
+      ),
+      pesanSukses: '${_kind.label} ${rupiah(amount)} ${_isEdit ? 'diperbarui' : 'tersimpan'}.',
     );
-    messenger.showSnackBar(SnackBar(content: Text('${_kind.label} ${rupiah(amount)} tersimpan.')));
-    context.pop();
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (ok) router.pop();
+  }
+
+  Future<void> _delete() async {
+    final txn = _editing!;
+    final router = GoRouter.of(context);
+    final ok = await jalankanAksi(
+      context,
+      () => _store.deleteTxn(txn),
+      pesanSukses: '${txn.kind.label} ${rupiah(txn.amount)} dihapus.',
+      onUndo: () => _store.restoreTxn(txn),
+    );
+    if (ok && mounted) router.pop();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (widget.editId != null && _editing == null) {
+      return Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Transaksi tidak ditemukan.', style: AppText.body(16, weight: FontWeight.w800)),
+                const SizedBox(height: 12),
+                TextButton(onPressed: () => context.pop(), child: const Text('Kembali')),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     final now = sekarang();
     final amount = int.parse(_amount);
     final cats = _store.categoriesFor(_kind);
@@ -119,9 +195,19 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
                 children: [
                   Row(
                     children: [
-                      RoundIconButton(icon: Icons.close_rounded, tooltip: 'Tutup', size: 44, onPressed: () => context.pop()),
+                      RoundIconButton(
+                          icon: Icons.close_rounded, tooltip: 'Tutup', size: 44, onPressed: () => context.pop()),
                       const SizedBox(width: 12),
-                      Text('Tambah transaksi', style: AppText.display(22, weight: FontWeight.w600)),
+                      Expanded(
+                        child: Text(_isEdit ? 'Ubah transaksi' : 'Tambah transaksi',
+                            style: AppText.display(22, weight: FontWeight.w600)),
+                      ),
+                      if (_isEdit)
+                        RoundIconButton(
+                            icon: Icons.delete_outline_rounded,
+                            tooltip: 'Hapus transaksi',
+                            size: 44,
+                            onPressed: _delete),
                     ],
                   ),
                   const SizedBox(height: 14),
@@ -158,12 +244,18 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
                           selected: _from == a.id,
                           onTap: () => setState(() {
                             _from = a.id;
-                            if (_to == _from) _to = _store.accounts.firstWhere((x) => x.id != _from).id;
+                            if (_to == _from) _to = _store.accounts.where((x) => x.id != _from).firstOrNull?.id;
                           }),
                         ),
                     ],
                   ),
-                  if (_kind == TxnKind.transfer) ...[
+                  if (_kind == TxnKind.transfer && _store.accounts.length < 2) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      'Transfer butuh minimal dua akun. Tambahkan akun di Pengaturan › Kelola akun.',
+                      style: AppText.body(13, weight: FontWeight.w700, color: AppColors.expenseInk),
+                    ),
+                  ] else if (_kind == TxnKind.transfer) ...[
                     const SizedBox(height: 12),
                     const _Label('Ke akun'),
                     Wrap(
@@ -240,7 +332,10 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
                     _Keypad(onPress: _press),
                     const SizedBox(height: 12),
                   ],
-                  BoldButton(label: 'Simpan ${_kind.label.toLowerCase()}', onPressed: _save),
+                  BoldButton(
+                    label: _saving ? 'Menyimpan…' : 'Simpan ${_kind.label.toLowerCase()}',
+                    onPressed: _saving ? null : _save,
+                  ),
                 ],
               ),
             ),

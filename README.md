@@ -1,82 +1,98 @@
-# Chiko – frontend Flutter
+# Chiko
 
-Isi folder ini:
+Aplikasi Flutter untuk mahasiswa yang juga bekerja: **tugas** (dengan rentang mulai–selesai), **kalender** jadwal
+kuliah/kerja, dan **keuangan** (akun, transaksi, kategori) — ditemani maskot Chiko yang ekspresinya mengikuti data.
 
+Semua data disimpan **di perangkat** (SQLite lewat [drift](https://drift.simonbinder.eu/)), tanpa akun online.
+
+## Menjalankan
+
+Butuh Flutter 3.24+ (Dart 3.5+).
+
+```bash
+flutter pub get
+flutter run
 ```
-lib/                      → kode app (6 layar + Pengaturan)
-assets/chiko/             → 6 ekspresi Chiko (SVG)
-pubspec_tambahan.yaml     → potongan yang perlu ditambahkan ke pubspec.yaml
+
+Setelah mengubah tabel di `lib/core/data/app_database.dart`, buat ulang kode drift:
+
+```bash
+dart run build_runner build
 ```
 
-## Cara memasang ke project Flutter-mu
+## Pemeriksaan & test
 
-1. **Backup `lib/main.dart` milikmu**, karena akan tertimpa.
-2. Salin folder `lib/` dan `assets/` ke root project Flutter-mu (sejajar dengan `pubspec.yaml`).
-3. Tambahkan package:
-   ```bash
-   flutter pub add go_router google_fonts flutter_svg
-   ```
-4. Daftarkan aset di `pubspec.yaml`, di bawah bagian `flutter:` (lihat `pubspec_tambahan.yaml`):
-   ```yaml
-   flutter:
-     uses-material-design: true
-     assets:
-       - assets/chiko/
-   ```
-5. Jalankan:
-   ```bash
-   flutter pub get
-   flutter analyze
-   flutter run
-   ```
+```bash
+flutter analyze
+dart format --set-exit-if-changed lib test integration_test
+flutter test                                   # unit + widget test (database di memori)
+flutter test integration_test -d windows       # ujung-ke-ujung di desktop / -d <id HP>
+```
 
-Butuh **Flutter 3.24 atau lebih baru** (Dart 3.5+). Cek dengan `flutter --version`.
+Test memakai jam tetap (Senin, 16 November 2026, 10.00) lewat `aturJam()` dan data contoh di
+`test/helpers/test_app.dart`. Aplikasi sungguhan memakai `DateTime.now()`.
 
 ## Struktur
 
 ```
 lib/
-├── main.dart
-├── app/            app.dart · router.dart (go_router, 5 tab) · theme.dart (warna & font)
+├── main.dart              buka database → AppServices → ChikoApp
+├── app/                   app.dart · router.dart · theme.dart · app_scope.dart (AppServices + AppScope)
 ├── core/
-│   ├── mascot/     chiko.dart (widget Chiko) · chiko_mood.dart (hitungMood)
-│   ├── utils/      formatters.dart (Rupiah, tanggal) · clock.dart (tanggal contoh)
-│   └── widgets/    bold.dart (kartu & tombol khas) · app_shell.dart (navigasi bawah)
+│   ├── data/              app_database.dart (tabel drift + data bawaan) · aturan_error.dart
+│   ├── mascot/            chiko.dart (widget maskot)
+│   ├── utils/             formatters.dart (Rupiah, tanggal) · clock.dart (sekarang())
+│   └── widgets/           bold.dart · app_shell.dart · aksi.dart (simpan/hapus + pesan) · swipe_to_delete.dart
 └── features/
-    ├── onboarding/ sambutan_page.dart
-    ├── dashboard/  dashboard_page.dart
-    ├── tasks/      data/ (model + store) · ui/ (daftar tugas, task_tile)
-    ├── calendar/   data/ (event_store) · ui/ (kalender, event_tile)
-    ├── finance/    data/ (model + store) · ui/ (keuangan, tambah transaksi)
-    └── settings/   settings_page.dart
+    ├── onboarding/        sambutan_page.dart (hanya muncul sekali)
+    ├── dashboard/         dashboard_page.dart · chiko_mood.dart (hitungMood)
+    ├── tasks/             data/ (model, store) · ui/ (daftar, form tugas, gaya warna)
+    ├── calendar/          data/ (model, store, span_layout) · ui/ (kalender, form jadwal)
+    ├── finance/           data/ (model, store, data bawaan) · ui/ (keuangan, form transaksi, gaya)
+    └── settings/          settings_page.dart · settings_store.dart · kelola_keuangan.dart
 ```
 
-## Yang sudah jalan
+**Alur data:** setiap fitur punya *store* (`ChangeNotifier`) yang membaca tabelnya ke memori. Layar membaca
+store secara sinkron lewat `AppScope.of(context)` dan `ListenableBuilder`. Perubahan ditulis ke database lalu
+store dimuat ulang. Aturan bisnis dicek di store dan dilempar sebagai `AturanError` (pesannya ditampilkan ke
+pengguna oleh `jalankanAksi`).
 
-- Navigasi bawah 5 tab; setiap tab ingat posisinya sendiri.
-- Centang tugas → progres mingguan, Beranda, dan kalender ikut berubah.
-- Filter kategori dan tab Aktif/Selesai di layar Tugas.
-- Kalender: ganti bulan, tap tanggal, mode Bulan/Minggu, titik warna per tanggal.
-- Tambah transaksi lewat keypad → saldo akun, grafik kategori, dan riwayat langsung ter-update.
-- Ekspresi Chiko di Beranda dihitung dari data (`hitungMood`): khawatir kalau ada deadline hari ini/besok,
-  kaget kalau saldo Dompet di bawah Rp 50.000, merayakan kalau semua tugas beres, tidur di atas jam 22.00.
-- Chiko bergerak naik-turun pelan dan memantul saat disentuh. Di Pengaturan, tap Chiko untuk mengganti ekspresi.
+Model data (`*_model.dart`) adalah Dart murni; warna dan ikon ada di file `*_style.dart` di lapisan UI.
 
-## Yang masih data contoh
+## Rilis
 
-- Semua data ada di memori (`TaskStore`, `FinanceStore`, `EventStore`) dan hilang saat app ditutup.
-  Langkah berikutnya: buat tabel drift sesuai dokumen rancangan, lalu ganti isi ketiga store itu
-  dengan query database. Layar tidak perlu diubah karena memakai method yang sama.
-- Tanggal "hari ini" dikunci ke **Senin, 16 November 2026** supaya sama dengan desain.
-  Ganti di `lib/core/utils/clock.dart` menjadi `DateTime.now()`.
-- Nama "Ahmad" di sapaan ada di `clock.dart` (`namaPengguna`).
-- Form tambah tugas, form jadwal, dan isi menu Pengaturan belum dibuat (tombolnya menampilkan pesan "menyusul").
+- ID aplikasi: `com.chiko.app` (Android `applicationId`, iOS bundle ID, Linux). **Ganti sebelum rilis pertama
+  bila kamu punya domain sendiri** — setelah terbit di toko aplikasi, ID tidak bisa diubah.
+- Ikon dibuat dari `assets/icon/` dengan `dart run flutter_launcher_icons`.
+- Font Fredoka & Nunito dibundel di `assets/fonts/` (lisensi SIL OFL 1.1, lihat `OFL-*.txt`).
 
-## Catatan
+### Tanda tangan Android
 
-- `google_fonts` mengunduh Fredoka dan Nunito saat pertama kali app dibuka (butuh internet sekali).
-  Kalau ingin offline penuh, unduh file font-nya ke `assets/fonts/` dan daftarkan di `pubspec.yaml`.
-- Pemilih tanggal masih berbahasa Inggris. Untuk Bahasa Indonesia, tambahkan `flutter_localizations`
-  dan `locale: Locale('id')` di `MaterialApp.router`.
-- Chiko sekarang memakai SVG. Saat animasi Rive siap, cukup ganti isi `lib/core/mascot/chiko.dart`;
-  layar lain tetap memanggil `Chiko(mood: ...)`.
+1. Buat keystore (sekali saja, simpan baik-baik — kalau hilang, update aplikasi tidak bisa diterbitkan):
+   ```bash
+   keytool -genkey -v -keystore %USERPROFILE%\chiko-upload.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+   ```
+2. Buat `android/key.properties` (sudah di-`.gitignore`, **jangan di-commit**):
+   ```properties
+   storePassword=...
+   keyPassword=...
+   keyAlias=upload
+   storeFile=C:/Users/<kamu>/chiko-upload.jks
+   ```
+3. Build untuk Play Store: `flutter build appbundle` (ukuran per perangkat lebih kecil daripada APK universal).
+
+Tanpa `key.properties`, build rilis tetap jalan tetapi ditandatangani kunci debug (ada peringatan di log) —
+cukup untuk mencoba, tidak untuk diunggah.
+
+Bila build rilis gagal dengan `package dev.flutter.plugins.integration_test does not exist` (biasanya setelah
+menjalankan integration test), jalankan `flutter clean && flutter pub get` lalu build lagi.
+
+### Web
+
+Penyimpanan drift di web membutuhkan file `sqlite3.wasm` dan `drift_worker.js` di folder `web/`
+(lihat dokumentasi drift_flutter). Target utama aplikasi ini adalah Android/iOS.
+
+## Belum ada
+
+- Notifikasi pengingat deadline (butuh `flutter_local_notifications` + izin notifikasi).
+- Ekspor/impor (backup) data.

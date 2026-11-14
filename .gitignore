@@ -1,48 +1,84 @@
-# Miscellaneous
-*.class
-*.log
-*.pyc
-*.swp
+# =====================================================================
+# Sistem operasi
+# =====================================================================
 .DS_Store
-.atom/
-.build/
-.buildlog/
-.history
-.svn/
-.swiftpm/
-migrate_working_dir/
+Thumbs.db
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
 
-# IntelliJ related
+# =====================================================================
+# Editor & IDE (pengaturan pribadi tiap developer)
+# =====================================================================
 *.iml
 *.ipr
 *.iws
 .idea/
+.vscode/
+.atom/
+.history
+*.swp
+*~
 
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
-
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
+# =====================================================================
+# Flutter / Dart / Pub — dibuat ulang otomatis oleh `flutter pub get` / build
+# =====================================================================
 .dart_tool/
+.flutter-plugins
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
 /build/
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.widget_preview/
+migrate_working_dir/
+
+# Hasil test: coverage & gambar golden yang gagal
 /coverage/
+**/failures/
 
-# Symbolication related
+# Simbol & peta obfuscation dari build rilis
 app.*.symbols
-
-# Obfuscation related
 app.*.map.json
 
-# Android Studio will place build artifacts here
+# Paket aplikasi yang tercecer di luar /build
+*.apk
+*.aab
+*.ipa
+
+# Android Studio menaruh artefak build di sini
 /android/app/debug
 /android/app/profile
 /android/app/release
 
-# Widget Preview related
-.widget_preview/
+# =====================================================================
+# Rahasia — JANGAN PERNAH di-commit
+# =====================================================================
+/android/key.properties
+*.jks
+*.keystore
+.env
+.env.*
+*.env
+
+# =====================================================================
+# Data lokal & file sementara
+# =====================================================================
+# Database SQLite yang mungkin terbuat saat mencoba/menguji (data app asli ada di folder dokumen perangkat)
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.log
+*.tmp
+*.bak
+tmp/
+
+# Lain-lain
+*.class
+*.pyc
+.build/
+.buildlog/
+.svn/
+.swiftpm/

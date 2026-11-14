@@ -1,114 +1,39 @@
-import 'package:flutter/material.dart';
+import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart';
 
-import '../../../app/theme.dart';
+import '../../../core/data/app_database.dart';
+import '../../../core/data/aturan_error.dart';
 import '../../../core/utils/formatters.dart';
 import '../../tasks/data/task_store.dart';
+import 'event_model.dart';
 
-enum EventType { kuliah, kerja, pribadi, deadline }
+export 'event_model.dart';
 
-extension EventTypeStyle on EventType {
-  String get label => switch (this) {
-        EventType.kuliah => 'Kuliah',
-        EventType.kerja => 'Kerja',
-        EventType.pribadi => 'Pribadi',
-        EventType.deadline => 'Deadline tugas',
-      };
-
-  Color get soft => switch (this) {
-        EventType.kuliah => AppColors.kuliahSoft,
-        EventType.kerja => AppColors.kerjaSoft,
-        EventType.pribadi => AppColors.pribadiSoft,
-        EventType.deadline => AppColors.expenseSoft,
-      };
-
-  Color get ink => switch (this) {
-        EventType.kuliah => AppColors.kuliahInk,
-        EventType.kerja => AppColors.kerjaInk,
-        EventType.pribadi => AppColors.pribadiInk,
-        EventType.deadline => AppColors.expenseInk,
-      };
-
-  Color get dot => switch (this) {
-        EventType.kuliah => AppColors.kuliahDot,
-        EventType.kerja => AppColors.kerjaDot,
-        EventType.pribadi => AppColors.pribadiDot,
-        EventType.deadline => AppColors.danger,
-      };
-}
-
-/// Satu kemunculan acara di tanggal tertentu (sudah "dibuka" dari pola berulang).
-class CalendarEvent {
-  const CalendarEvent({required this.title, required this.type, required this.start, this.end, this.place = ''});
-
-  final String title;
-  final EventType type;
-  final DateTime start;
-  final DateTime? end;
-  final String place;
-}
-
-/// Sesuai tabel `events`: disimpan sekali, berulang tiap minggu sampai [repeatUntil].
-class ScheduleEntry {
-  const ScheduleEntry({
-    required this.title,
-    required this.type,
-    required this.start,
-    required this.end,
-    this.place = '',
-    this.repeatWeekly = false,
-    this.repeatUntil,
-  });
-
-  final String title;
-  final EventType type;
-  final DateTime start;
-  final DateTime end;
-  final String place;
-  final bool repeatWeekly;
-  final DateTime? repeatUntil;
-
-  /// Apakah acara ini muncul di [day]?
-  bool occursOn(DateTime day) {
-    final d = tanpaJam(day);
-    final first = tanpaJam(start);
-    if (d.isBefore(first)) return false;
-    if (!repeatWeekly) return samaHari(first, d);
-    if (repeatUntil != null && d.isAfter(repeatUntil!)) return false;
-    return d.weekday == first.weekday;
-  }
-
-  CalendarEvent on(DateTime day) {
-    DateTime at(DateTime t) => DateTime(day.year, day.month, day.day, t.hour, t.minute);
-    return CalendarEvent(title: title, type: type, start: at(start), end: at(end), place: place);
-  }
-}
-
-/// Jadwal contoh di memori. Deadline tugas diambil langsung dari [TaskStore],
-/// tidak disalin ke sini.
+/// Jadwal di tabel `events`. Deadline tugas diambil dari [TaskStore] (tidak disalin ke sini).
 class EventStore extends ChangeNotifier {
-  EventStore._();
+  EventStore(this._db, this._tasks);
 
-  static final EventStore instance = EventStore._();
+  final AppDatabase _db;
+  final TaskStore _tasks;
 
-  final List<ScheduleEntry> _entries = [
-    ScheduleEntry(
-      title: 'Pengolahan Citra dan Visi Komputer',
-      type: EventType.kuliah,
-      start: DateTime(2026, 9, 7, 7, 0),
-      end: DateTime(2026, 9, 7, 9, 30),
-      place: 'Lab komputer · berulang tiap Senin',
-      repeatWeekly: true,
-      repeatUntil: DateTime(2026, 12, 31),
-    ),
-    for (final day in [2, 16, 30])
-      ScheduleEntry(
-        title: 'Rapat divisi',
-        type: EventType.kerja,
-        start: DateTime(2026, 11, day, 13, 0),
-        end: DateTime(2026, 11, day, 15, 0),
-        place: 'Online · Google Meet',
-      ),
-  ];
+  static const maxPanjangJudul = 200;
+
+  /// Lama pengulangan bawaan: satu semester (16 pertemuan mingguan).
+  static const mingguPengulanganBawaan = 16;
+
+  List<ScheduleEntry> _entries = const [];
+
+  Future<void> load() async {
+    _entries = await _db.select(_db.scheduleEntries).get();
+    notifyListeners();
+  }
+
+  ScheduleEntry? byId(int id) {
+    for (final e in _entries) {
+      if (e.id == id) return e;
+    }
+    return null;
+  }
 
   /// Jadwal saja (tanpa deadline tugas) di [day], urut jam.
   List<CalendarEvent> scheduleOn(DateTime day) =>
@@ -117,24 +42,82 @@ class EventStore extends ChangeNotifier {
   /// Jadwal + deadline tugas di [day].
   List<CalendarEvent> agendaOn(DateTime day) {
     final list = scheduleOn(day);
-    for (final t in TaskStore.instance.dueOn(day)) {
-      list.add(CalendarEvent(title: t.title, type: EventType.deadline, start: t.dueAt, place: 'Deadline · ${t.category.label}'));
+    for (final t in _tasks.dueOn(day)) {
+      list.add(CalendarEvent(
+        title: t.title,
+        type: EventType.deadline,
+        start: t.dueAt,
+        place: 'Deadline · ${t.category.label}',
+        taskId: t.id,
+      ));
     }
     list.sort((a, b) => a.start.compareTo(b.start));
     return list;
   }
 
-  /// Warna titik penanda untuk sel kalender (maks. 3, tanpa duplikat).
-  List<Color> dotsOn(DateTime day) {
-    final colors = <Color>[];
+  /// Jenis acara di [day] untuk titik penanda sel kalender (maks. 3, tanpa duplikat).
+  List<EventType> typesOn(DateTime day) {
+    final types = <EventType>[];
     for (final e in agendaOn(day)) {
-      if (!colors.contains(e.type.dot)) colors.add(e.type.dot);
+      if (!types.contains(e.type)) types.add(e.type);
     }
-    return colors.take(3).toList();
+    return types.take(3).toList();
   }
 
-  void add(ScheduleEntry entry) {
-    _entries.add(entry);
-    notifyListeners();
+  /// Aturan jadwal. Melempar [AturanError] bila tidak valid.
+  static void validate({
+    required String title,
+    required EventType type,
+    required DateTime start,
+    required DateTime end,
+    DateTime? repeatUntil,
+  }) {
+    final judul = title.trim();
+    if (judul.isEmpty) throw const AturanError('Judul jadwal tidak boleh kosong.');
+    if (judul.length > maxPanjangJudul) throw const AturanError('Judul jadwal terlalu panjang.');
+    if (type == EventType.deadline) throw const AturanError('Deadline dibuat dari halaman Tugas.');
+    if (!end.isAfter(start)) throw const AturanError('Jam selesai harus setelah jam mulai.');
+    if (repeatUntil != null && tanpaJam(repeatUntil).isBefore(tanpaJam(start))) {
+      throw const AturanError('Tanggal akhir pengulangan tidak boleh sebelum tanggal mulai.');
+    }
+  }
+
+  /// Menambah jadwal, atau mengubah jadwal [editingId].
+  Future<void> save({
+    required String title,
+    required EventType type,
+    required DateTime start,
+    required DateTime end,
+    String place = '',
+    bool repeatWeekly = false,
+    DateTime? repeatUntil,
+    int? editingId,
+  }) async {
+    validate(title: title, type: type, start: start, end: end, repeatUntil: repeatWeekly ? repeatUntil : null);
+    final data = ScheduleEntriesCompanion(
+      title: Value(title.trim()),
+      type: Value(type),
+      start: Value(start),
+      end: Value(end),
+      place: Value(place.trim()),
+      repeatWeekly: Value(repeatWeekly),
+      repeatUntil: Value(repeatWeekly ? repeatUntil : null),
+    );
+    if (editingId == null) {
+      await _db.into(_db.scheduleEntries).insert(data);
+    } else {
+      await (_db.update(_db.scheduleEntries)..where((e) => e.id.equals(editingId))).write(data);
+    }
+    await load();
+  }
+
+  Future<void> remove(ScheduleEntry entry) async {
+    await (_db.delete(_db.scheduleEntries)..where((e) => e.id.equals(entry.id))).go();
+    await load();
+  }
+
+  Future<void> restore(ScheduleEntry entry) async {
+    await _db.into(_db.scheduleEntries).insert(entry.toInsertable(), mode: InsertMode.insertOrIgnore);
+    await load();
   }
 }

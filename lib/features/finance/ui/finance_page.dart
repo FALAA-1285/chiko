@@ -1,18 +1,33 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../app/app_scope.dart';
 import '../../../app/theme.dart';
 import '../../../core/utils/clock.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/bold.dart';
 import '../data/finance_store.dart';
+import 'finance_style.dart';
 
-class FinancePage extends StatelessWidget {
+class FinancePage extends StatefulWidget {
   const FinancePage({super.key});
 
   @override
+  State<FinancePage> createState() => _FinancePageState();
+}
+
+class _FinancePageState extends State<FinancePage> {
+  late DateTime _selectedMonth = DateTime(sekarang().year, sekarang().month);
+
+  void _changeMonth(int delta) {
+    setState(() {
+      _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month + delta);
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final store = FinanceStore.instance;
+    final store = AppScope.of(context).finance;
     return Scaffold(
       floatingActionButton: AddFab(
         tooltip: 'Tambah transaksi',
@@ -23,66 +38,113 @@ class FinancePage extends StatelessWidget {
           listenable: store,
           builder: (context, _) {
             final now = sekarang();
-            final bulan = DateTime(now.year, now.month);
+            final bulan = _selectedMonth;
             final masuk = store.incomeInMonth(bulan);
             final keluar = store.expenseInMonth(bulan);
             final perKategori = store.expenseByCategory(bulan);
-            final hariTransaksi = store.recentByDay();
+            final hariTransaksi = store.byDayInMonth(bulan);
+            final bulanIni = DateTime(now.year, now.month);
+            final bisaMaju = bulan.isBefore(bulanIni);
 
             return ListView(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 110),
               children: [
-                Row(
-                  children: [
-                    Expanded(child: Text('Keuangan', style: AppText.display(30))),
-                    OutlinedButton(
-                      onPressed: () {},
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.ink,
-                        backgroundColor: AppColors.white,
-                        side: const BorderSide(color: AppColors.ink, width: 2),
-                        minimumSize: const Size(44, 44),
-                        shape: const StadiumBorder(),
-                        textStyle: AppText.body(14, weight: FontWeight.w800),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text('${namaBulan(bulan.month)} ${bulan.year}'),
-                          const SizedBox(width: 4),
-                          const Icon(Icons.expand_more_rounded, size: 20),
-                        ],
-                      ),
-                    ),
-                  ],
+                // Pemilih bulan pindah ke bawah judul di layar sempit, supaya judul tidak terpotong.
+                LayoutBuilder(
+                  builder: (context, c) {
+                    final title = Text('Keuangan', style: AppText.display(30));
+                    final selector = Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        RoundIconButton(
+                          icon: Icons.chevron_left_rounded,
+                          tooltip: 'Bulan sebelumnya',
+                          size: 44,
+                          onPressed: () => _changeMonth(-1),
+                        ),
+                        const SizedBox(width: 4),
+                        OutlinedButton(
+                          onPressed: () {
+                            setState(() => _selectedMonth = DateTime(sekarang().year, sekarang().month));
+                          },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.ink,
+                            backgroundColor: AppColors.white,
+                            side: const BorderSide(color: AppColors.ink, width: 2),
+                            minimumSize: const Size(40, 36),
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            shape: const StadiumBorder(),
+                            textStyle: AppText.body(13, weight: FontWeight.w800),
+                          ),
+                          child: Text('${namaBulan(bulan.month)} ${bulan.year}'),
+                        ),
+                        const SizedBox(width: 4),
+                        RoundIconButton(
+                          icon: Icons.chevron_right_rounded,
+                          tooltip: 'Bulan berikutnya',
+                          size: 44,
+                          onPressed: bisaMaju ? () => _changeMonth(1) : null,
+                        ),
+                      ],
+                    );
+                    if (c.maxWidth < 360) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [title, const SizedBox(height: 10), selector],
+                      );
+                    }
+                    return Row(children: [Expanded(child: title), selector]);
+                  },
                 ),
                 const SizedBox(height: 16),
                 _BalanceCard(total: store.totalBalance, masuk: masuk, keluar: keluar),
                 const SizedBox(height: 20),
                 SectionHeader(title: 'Akun', action: 'Kelola', onAction: () => context.go('/pengaturan')),
                 const SizedBox(height: 4),
-                Row(
-                  children: [
-                    for (var i = 0; i < store.accounts.length; i++) ...[
-                      if (i > 0) const SizedBox(width: 10),
-                      Expanded(
-                        child: _AccountCard(
-                          account: store.accounts[i],
-                          balance: store.balanceOf(store.accounts[i].id),
+                if (store.accounts.length <= 3)
+                  Row(
+                    children: [
+                      for (var i = 0; i < store.accounts.length; i++) ...[
+                        if (i > 0) const SizedBox(width: 10),
+                        Expanded(
+                          child:
+                              _AccountCard(account: store.accounts[i], balance: store.balanceOf(store.accounts[i].id)),
                         ),
-                      ),
+                      ],
                     ],
-                  ],
-                ),
+                  )
+                else
+                  // Banyak akun: geser ke samping supaya kartu tidak terlalu sempit.
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        for (var i = 0; i < store.accounts.length; i++) ...[
+                          if (i > 0) const SizedBox(width: 10),
+                          SizedBox(
+                            width: 118,
+                            child: _AccountCard(
+                                account: store.accounts[i], balance: store.balanceOf(store.accounts[i].id)),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                 const SizedBox(height: 20),
                 _CategoryCard(items: perKategori, total: keluar),
                 const SizedBox(height: 20),
-                Text('Transaksi terakhir', style: AppText.display(20, weight: FontWeight.w600)),
+                Text('Transaksi ${namaBulan(bulan.month)}', style: AppText.display(20, weight: FontWeight.w600)),
                 const SizedBox(height: 10),
+                if (hariTransaksi.isEmpty)
+                  Text(
+                    'Belum ada transaksi di bulan ini. Ketuk tombol + untuk mencatat.',
+                    style: AppText.body(14, color: AppColors.inkSoft),
+                  ),
                 for (final (day, txns) in hariTransaksi) ...[
                   Text(
                     labelHariTransaksi(day, now).toUpperCase(),
-                    style: AppText.body(13, weight: FontWeight.w900, color: AppColors.muted).copyWith(letterSpacing: 0.8),
+                    style:
+                        AppText.body(13, weight: FontWeight.w900, color: AppColors.muted).copyWith(letterSpacing: 0.8),
                   ),
                   const SizedBox(height: 6),
                   BoldCard(
@@ -91,7 +153,7 @@ class FinancePage extends StatelessWidget {
                     child: Column(
                       children: [
                         for (var i = 0; i < txns.length; i++) ...[
-                          _TxnRow(txn: txns[i], store: store),
+                          _TxnRow(txn: txns[i], store: store, onTap: () => context.push('/transaksi/${txns[i].id}')),
                           if (i < txns.length - 1) const Divider(height: 1, thickness: 1.5, color: AppColors.line),
                         ],
                       ],
@@ -326,7 +388,8 @@ class _CategoryCard extends StatelessWidget {
                     ),
                     SizedBox(
                       width: 104,
-                      child: Text(rupiah(amount), textAlign: TextAlign.right, style: AppText.body(14, weight: FontWeight.w900)),
+                      child: Text(rupiah(amount),
+                          textAlign: TextAlign.right, style: AppText.body(14, weight: FontWeight.w900)),
                     ),
                   ],
                 ),
@@ -339,30 +402,31 @@ class _CategoryCard extends StatelessWidget {
 }
 
 class _TxnRow extends StatelessWidget {
-  const _TxnRow({required this.txn, required this.store});
+  const _TxnRow({required this.txn, required this.store, required this.onTap});
 
   final Txn txn;
   final FinanceStore store;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final cat = store.categoryById(txn.categoryId);
-    final akun = store.accountById(txn.accountId);
+    final akun = store.accountById(txn.accountId)?.name ?? '?';
     final (sub, icon, soft, sign) = switch (txn.kind) {
       TxnKind.transfer => (
-          'Transfer · ${akun.name} ke ${store.accountById(txn.toAccountId!).name}',
+          'Transfer · $akun ke ${store.accountById(txn.toAccountId)?.name ?? '?'}',
           Icons.swap_horiz_rounded,
           AppColors.transferSoft,
           '',
         ),
       TxnKind.income => (
-          'Pemasukan · ${akun.name}',
+          'Pemasukan · $akun',
           cat?.icon ?? Icons.south_west_rounded,
           AppColors.incomeSoft,
           '+',
         ),
       TxnKind.expense => (
-          '${cat?.name ?? 'Pengeluaran'} · ${akun.name}',
+          '${cat?.name ?? 'Pengeluaran'} · $akun',
           cat?.icon ?? Icons.north_east_rounded,
           cat?.soft ?? AppColors.expenseSoft,
           '−',
@@ -370,36 +434,39 @@ class _TxnRow extends StatelessWidget {
     };
     final judul = txn.note.isNotEmpty ? txn.note : (cat?.name ?? txn.kind.label);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: soft,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppColors.ink, width: 2),
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: soft,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppColors.ink, width: 2),
+              ),
+              child: Icon(icon, size: 20, color: AppColors.ink),
             ),
-            child: Icon(icon, size: 20, color: AppColors.ink),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(judul, style: AppText.body(15, weight: FontWeight.w800)),
-                Text(sub, style: AppText.body(13, color: AppColors.muted)),
-              ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(judul, style: AppText.body(15, weight: FontWeight.w800)),
+                  Text(sub, style: AppText.body(13, color: AppColors.muted)),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            '$sign${rupiah(txn.amount)}',
-            style: AppText.body(15, weight: FontWeight.w900, color: txn.kind.ink),
-          ),
-        ],
+            const SizedBox(width: 8),
+            Text(
+              '$sign${rupiah(txn.amount)}',
+              style: AppText.body(15, weight: FontWeight.w900, color: txn.kind.ink),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -1,80 +1,51 @@
+import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 
+import '../../../core/data/app_database.dart';
+import '../../../core/data/aturan_error.dart';
 import '../../../core/utils/clock.dart';
 import '../../../core/utils/formatters.dart';
 import 'task_model.dart';
 
 export 'task_model.dart';
 
-/// Penyimpanan tugas sementara (di memori) berisi data contoh.
-/// Nanti isi kelas ini diganti query ke database drift (task_repository),
-/// sedangkan layar tetap memakai method yang sama.
+/// Tugas: disimpan di tabel `tasks`, disalin ke memori supaya layar bisa membaca
+/// secara sinkron. Setiap perubahan ditulis ke database lalu cache dimuat ulang.
 class TaskStore extends ChangeNotifier {
-  TaskStore._();
+  TaskStore(this._db);
 
-  static final TaskStore instance = TaskStore._();
+  final AppDatabase _db;
 
-  int _nextId = 100;
+  /// Batas panjang judul tugas (sama dengan kolom database).
+  static const maxPanjangJudul = 200;
 
-  final List<Task> _tasks = [
-    Task(
-      id: 1,
-      title: 'Laporan praktikum PCVK',
-      category: TaskCategory.kuliah,
-      groupName: 'PCVK',
-      dueAt: DateTime(2026, 11, 17, 23, 59),
-      priority: Priority.tinggi,
-    ),
-    Task(
-      id: 2,
-      title: 'Desain konten kampanye',
-      category: TaskCategory.kerja,
-      dueAt: DateTime(2026, 11, 18, 17, 0),
-    ),
-    Task(
-      id: 3,
-      title: 'Proyek akhir: ekstraksi fitur HOG',
-      category: TaskCategory.kuliah,
-      groupName: 'PCVK',
-      dueAt: DateTime(2026, 11, 20, 23, 59),
-      priority: Priority.tinggi,
-    ),
-    Task(
-      id: 4,
-      title: 'Bayar kos bulan Desember',
-      category: TaskCategory.pribadi,
-      dueAt: DateTime(2026, 11, 21, 12, 0),
-      priority: Priority.rendah,
-    ),
-    Task(
-      id: 5,
-      title: 'Kuis Basis Data',
-      category: TaskCategory.kuliah,
-      dueAt: DateTime(2026, 11, 16, 23, 59),
-      completedAt: DateTime(2026, 11, 15, 20, 0),
-    ),
-    Task(
-      id: 6,
-      title: 'Notulen rapat divisi',
-      category: TaskCategory.kerja,
-      dueAt: DateTime(2026, 11, 16, 12, 0),
-      completedAt: DateTime(2026, 11, 14, 9, 0),
-    ),
-    Task(
-      id: 7,
-      title: 'Perpanjang SIM',
-      category: TaskCategory.pribadi,
-      dueAt: DateTime(2026, 11, 19, 15, 0),
-      priority: Priority.rendah,
-      completedAt: DateTime(2026, 11, 15, 11, 0),
-    ),
-  ];
+  List<Task> _tasks = const [];
+  List<Task>? _active;
+  List<Task>? _completed;
+
+  Future<void> load() async {
+    _tasks = await _db.select(_db.tasks).get();
+    _active = null;
+    _completed = null;
+    notifyListeners();
+  }
+
+  List<Task> get all => List.unmodifiable(_tasks);
+
+  Task? byId(int id) {
+    for (final t in _tasks) {
+      if (t.id == id) return t;
+    }
+    return null;
+  }
 
   /// Tugas belum selesai, urut dari deadline terdekat.
-  List<Task> get active => _tasks.where((t) => !t.done).toList()..sort((a, b) => a.dueAt.compareTo(b.dueAt));
+  List<Task> get active =>
+      _active ??= List.unmodifiable(_tasks.where((t) => !t.done).toList()..sort((a, b) => a.dueAt.compareTo(b.dueAt)));
 
   /// Tugas selesai, yang terakhir diselesaikan di atas.
-  List<Task> get completed => _tasks.where((t) => t.done).toList()..sort((a, b) => b.completedAt!.compareTo(a.completedAt!));
+  List<Task> get completed => _completed ??=
+      List.unmodifiable(_tasks.where((t) => t.done).toList()..sort((a, b) => b.completedAt!.compareTo(a.completedAt!)));
 
   List<Task> completedOn(DateTime day) => completed.where((t) => samaHari(t.completedAt!, day)).toList();
 
@@ -83,31 +54,93 @@ class TaskStore extends ChangeNotifier {
 
   /// Tugas dengan deadline dalam minggu yang sama dengan [now] (Senin–Minggu).
   List<Task> thisWeek(DateTime now) {
-    final start = tanpaJam(now).subtract(Duration(days: now.weekday - 1));
-    final end = start.add(const Duration(days: 7));
+    final start = awalMinggu(now);
+    final end = DateTime(start.year, start.month, start.day + 7);
     return _tasks.where((t) => !t.dueAt.isBefore(start) && t.dueAt.isBefore(end)).toList();
   }
 
-  void toggle(Task task) {
-    task.completedAt = task.done ? null : sekarang();
-    notifyListeners();
+  /// Tugas berentang (punya tanggal mulai) yang beririsan dengan [from]..[to] (per hari, inklusif).
+  /// Urut dari yang mulai lebih awal, lalu yang lebih panjang.
+  List<Task> spansBetween(DateTime from, DateTime to) =>
+      _tasks.where((t) => t.hasSpan && selisihHari(t.startAt!, to) >= 0 && selisihHari(from, t.dueAt) >= 0).toList()
+        ..sort((a, b) {
+          final c = a.startAt!.compareTo(b.startAt!);
+          return c != 0 ? c : b.durasiHari.compareTo(a.durasiHari);
+        });
+
+  /// Tugas berentang yang sedang berjalan di [day].
+  List<Task> spanningOn(DateTime day) => spansBetween(day, day);
+
+  /// Aturan tugas. Melempar [AturanError] bila tidak valid.
+  /// [requireFutureDeadline]: untuk tugas baru, deadline harus setelah sekarang.
+  static void validate({
+    required String title,
+    required DateTime dueAt,
+    DateTime? startAt,
+    bool requireFutureDeadline = false,
+  }) {
+    final judul = title.trim();
+    if (judul.isEmpty) throw const AturanError('Judul tugas tidak boleh kosong.');
+    if (judul.length > maxPanjangJudul) throw const AturanError('Judul tugas terlalu panjang.');
+    if (startAt != null && selisihHari(startAt, dueAt) < 0) {
+      throw const AturanError('Tanggal mulai tidak boleh setelah deadline.');
+    }
+    if (requireFutureDeadline && !dueAt.isAfter(sekarang())) {
+      throw const AturanError('Deadline harus setelah waktu sekarang.');
+    }
   }
 
-  void add({
+  Future<Task> add({
     required String title,
     required TaskCategory category,
     required DateTime dueAt,
+    DateTime? startAt,
     Priority priority = Priority.sedang,
     String? groupName,
-  }) {
-    _tasks.add(Task(
-      id: _nextId++,
-      title: title,
-      category: category,
-      dueAt: dueAt,
-      priority: priority,
-      groupName: groupName,
-    ));
-    notifyListeners();
+    bool requireFutureDeadline = true,
+  }) async {
+    validate(title: title, dueAt: dueAt, startAt: startAt, requireFutureDeadline: requireFutureDeadline);
+    final group = groupName?.trim();
+    final id = await _db.into(_db.tasks).insert(TasksCompanion.insert(
+          title: title.trim(),
+          category: category,
+          priority: priority,
+          dueAt: dueAt,
+          startAt: Value(startAt == null ? null : tanpaJam(startAt)),
+          groupName: Value(group == null || group.isEmpty ? null : group),
+        ));
+    await load();
+    return byId(id)!;
+  }
+
+  /// Menyimpan perubahan tugas yang sudah ada.
+  Future<void> update(Task task) async {
+    validate(title: task.title, dueAt: task.dueAt, startAt: task.startAt);
+    final group = task.groupName?.trim();
+    final rapi = task.copyWith(
+      title: task.title.trim(),
+      startAt: () => task.startAt == null ? null : tanpaJam(task.startAt!),
+      groupName: () => group == null || group.isEmpty ? null : group,
+    );
+    await _db.update(_db.tasks).replace(rapi.toInsertable());
+    await load();
+  }
+
+  Future<void> toggle(Task task) async {
+    final current = byId(task.id) ?? task;
+    await (_db.update(_db.tasks)..where((t) => t.id.equals(task.id)))
+        .write(TasksCompanion(completedAt: Value(current.done ? null : sekarang())));
+    await load();
+  }
+
+  Future<void> remove(Task task) async {
+    await (_db.delete(_db.tasks)..where((t) => t.id.equals(task.id))).go();
+    await load();
+  }
+
+  /// Mengembalikan tugas yang baru dihapus (dengan id yang sama).
+  Future<void> restore(Task task) async {
+    await _db.into(_db.tasks).insert(task.toInsertable(), mode: InsertMode.insertOrIgnore);
+    await load();
   }
 }
